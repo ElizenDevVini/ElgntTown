@@ -1,37 +1,52 @@
-import { NextRequest, NextResponse } from 'next/server'
+import type { NextRequest } from "next/server";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs"; // ensure Node runtime
 
 export async function POST(req: NextRequest) {
   try {
-    const { model, messages } = await req.json()
-    const apiKey = process.env.OPENAI_API_KEY
-    const base = process.env.OPENAI_API_BASE || 'https://api.openai.com/v1'
-    const resolvedModel = model || process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    const body = await req.json();
 
-    if (!apiKey) return NextResponse.json({ error: 'Missing OPENAI_API_KEY' }, { status: 400 })
+    const apiKey = process.env.OPENAI_API_KEY;
+    const apiBase = process.env.OPENAI_API_BASE || "https://api.openai.com/v1";
+    const model = body?.model || process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-    const r = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: resolvedModel, messages: messages || [], temperature: 0.7 })
-    })
-
-    if (!r.ok) {
-      const err = await r.text()
-      return NextResponse.json({ error: 'Upstream error', detail: err }, { status: r.status })
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), { status: 400 });
     }
 
-    const j = await r.json()
-    const text = j?.choices?.[0]?.message?.content ?? ''
-    const usage = j?.usage ?? {
-      total_tokens: text.split(/\s+/).length * 2,
-      prompt_tokens: undefined,
-      completion_tokens: undefined
+    const upstream = await fetch(`${apiBase}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: body?.messages || [],
+        temperature: 0.6,
+        stream: false,
+      }),
+    });
+
+    if (!upstream.ok) {
+      const err = await upstream.text();
+      return new Response(JSON.stringify({ error: `Upstream ${upstream.status}: ${err}` }), { status: 502 });
     }
-    // Always return choices for the client
-    return NextResponse.json({ choices: [{ message: { content: text } }], usage })
+
+    const j = await upstream.json();
+
+    // Normalize to { choices[0].message.content, usage }
+    const content =
+      j?.choices?.[0]?.message?.content ??
+      j?.choices?.[0]?.text ??
+      "";
+
+    const usage = j?.usage ?? {};
+    return Response.json({
+      choices: [{ message: { content } }],
+      usage,
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: 'Server error', detail: String(e) }, { status: 500 })
+    return new Response(JSON.stringify({ error: e?.message || "unknown error" }), { status: 500 });
   }
 }
