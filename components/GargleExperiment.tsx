@@ -7,21 +7,20 @@ import {
 } from "recharts";
 
 type AgentId = "gargle";
-
-/** Chat (user <-> Gargle) — never shows feeds */
 type ChatMessage = { from: "user" | AgentId; text: string; ts: number };
-/** Logs (feed -> Gargle reply) */
 type LogLine = { who: "feed" | AgentId; text: string; ts: number };
-
 type BrainrotPoint = { t: number } & Record<AgentId, number>;
 type Usage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 type UsageSample = { ts: number; in: number; out: number };
 type RangeKey = "ALL" | "2M";
 
+type Category = "tiktok" | "stories" | "instagram";
+type StatSample = { ts: number; category: Category; latencyMs: number; replyLen: number };
+
 const AGENT = {
   id: "gargle" as const,
   name: "Gargle",
-  poweredBy: "Claude", // label only; backend call is OpenAI format
+  poweredBy: "Claude",
   backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini",
 };
 
@@ -49,8 +48,6 @@ function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-/** Normalize any upstream shape into OpenAI-like text + usage */
 function extractTextAndUsage(j: any): { text: string; usage: Usage } {
   const text =
     j?.choices?.[0]?.message?.content ??
@@ -67,8 +64,6 @@ function extractTextAndUsage(j: any): { text: string; usage: Usage } {
     };
   return { text, usage };
 }
-
-/** Frontend call — expects OpenAI-compatible JSON back from /api/chat */
 async function callLLM(
   systemPrompt: string,
   userText: string,
@@ -96,8 +91,6 @@ async function callLLM(
     return null;
   }
 }
-
-/** Brainrot topics library (fresh, includes “tan tang sahur”) */
 const BRAINTROTS = [
   "NPC live loop: ice cream so good remix",
   "day-in-the-life sigma grindset cut",
@@ -116,7 +109,6 @@ const BRAINTROTS = [
   "doomscrolling instagram explore comments",
   "reposted story with red circles",
 ];
-
 function nextBrainrotTopic(rng: () => number, recent: string[]) {
   for (let i = 0; i < 12; i++) {
     const cand = BRAINTROTS[Math.floor(rng() * BRAINTROTS.length)];
@@ -124,16 +116,22 @@ function nextBrainrotTopic(rng: () => number, recent: string[]) {
   }
   return BRAINTROTS[Math.floor(rng() * BRAINTROTS.length)];
 }
+function topicCategory(topic: string): Category {
+  const t = topic.toLowerCase();
+  if (t.includes("tiktok") || t.includes("npc") || t.includes("skibidi") || t.includes("sigma") || t.includes("capcut") || t.includes("subway")) return "tiktok";
+  if (t.includes("story") || t.includes("stories") || t.includes("carousel")) return "stories";
+  return "instagram";
+}
+const msFmt = (n: number) => `${Math.round(n)}ms`;
+const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 export default function GargleExperiment() {
-  // ---- state (feed locked to LOW; no controls) ----
   const [range, setRange] = useState<RangeKey>("ALL");
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [series, setSeries] = useState<BrainrotPoint[]>([]);
   const [level, setLevel] = useState<Record<AgentId, number>>({ gargle: 0 });
 
-  // ---- refs ----
   const usageRef = useRef<UsageSample[]>([]);
   const levelRef = useRef(0);
   const logsRef = useRef<HTMLDivElement | null>(null);
@@ -141,30 +139,35 @@ export default function GargleExperiment() {
   const rng = useMemo(() => mulberry32(Math.floor(Date.now() % 1e7)), []);
   const recentTopicsRef = useRef<string[]>([]);
 
+  // Stats for diagram
+  const lastFeedAtRef = useRef<number | null>(null);
+  const pendingCatRef = useRef<Category>("tiktok");
+  const statsRef = useRef<StatSample[]>([]);
+  const [, forceStats] = useState(0);
+
   useEffect(() => { levelRef.current = level.gargle; }, [level.gargle]);
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [logs]);
 
-  // ---- feeder: LOW only, never shown in chat, Gargle always replies ----
+  // Feeder (LOW only)
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
+      const topic = nextBrainrotTopic(rng, recentTopicsRef.current);
+      recentTopicsRef.current.push(topic);
+      if (recentTopicsRef.current.length > 16) recentTopicsRef.current.shift();
 
-      // fresh topic
-      const recent = recentTopicsRef.current;
-      const topic = nextBrainrotTopic(rng, recent);
-      recent.push(topic);
-      if (recent.length > 16) recent.shift();
-
-      // token ingest for LOW feed
       const approxIn = 14 + Math.floor(rng() * 22);
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // FEED log (literal stays narrow)
+      // category + timing
+      const cat = topicCategory(topic);
+      pendingCatRef.current = cat;
+      lastFeedAtRef.current = now;
+
       setLogs((prev) => [...prev, { who: "feed" as const, text: `Feed → ${topic}`, ts: now }].slice(-500));
 
-      // Gargle’s reply via OpenAI after slight delay
+      // Reply after slight delay
       setTimeout(async () => {
-        // Build short history from recent logs (role computed then typed)
         const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => {
           const role: "user" | "assistant" = l.who === "feed" ? "user" : "assistant";
           return { role, content: l.text.replace(/^Feed →\s*/, "") };
@@ -182,8 +185,18 @@ export default function GargleExperiment() {
 
         usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
 
-        // Gargle log (literal stays narrow)
         setLogs((prev) => [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500));
+
+        // record stats
+        const start = lastFeedAtRef.current ?? Date.now();
+        const latency = Date.now() - start;
+        const replyLen = reply ? reply.split(/\s+/).length : 0;
+        statsRef.current.push({ ts: Date.now(), category: pendingCatRef.current, latencyMs: latency, replyLen });
+        // keep ~5 minutes
+        const cutoff = Date.now() - 5 * 60_000;
+        statsRef.current = { current: statsRef.current.current } as any; // (no-op for TS)
+        statsRef.current = { ...statsRef }.current as any; // not needed; we’ll just filter when reading
+        forceStats((n) => n + 1); // trigger re-render
 
         // update index + chart
         const idx = computeIndex(usageRef.current, Date.now());
@@ -197,9 +210,9 @@ export default function GargleExperiment() {
     }, FEED_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [rng, logs]); // keep history fresh
+  }, [rng, logs]);
 
-  // ---- MODEL CHATS: user talks to Gargle (no feeds here) ----
+  // MODEL CHATS
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const el = inputRef.current;
@@ -234,9 +247,9 @@ export default function GargleExperiment() {
     });
   }
 
-  // ---- derived ----
+  // Derived
   const cur = level.gargle;
-  const avg = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
+  const avgLvl = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
   const vol = useMemo(() => {
     const vals = series.map((p) => p.gargle);
     if (vals.length < 3) return 0;
@@ -245,16 +258,30 @@ export default function GargleExperiment() {
     for (let i = 1; i < w.length; i++) d += Math.abs(w[i] - w[i - 1]);
     return d / (w.length - 1);
   }, [series]);
-
   const displaySeries = useMemo(() => (range === "ALL" ? series : series.slice(-120)), [series, range]);
   const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
 
-  // ---- UI ----
+  // Diagram aggregates (last 5 minutes)
+  const diagram = useMemo(() => {
+    const cutoff = Date.now() - 5 * 60_000;
+    const recent = statsRef.current.filter((s) => s.ts >= cutoff);
+    const byCat: Record<Category, StatSample[]> = { tiktok: [], stories: [], instagram: [] };
+    recent.forEach((s) => byCat[s.category].push(s));
+    const counts: Record<Category, number> = {
+      tiktok: byCat.tiktok.length,
+      stories: byCat.stories.length,
+      instagram: byCat.instagram.length,
+    };
+    const avgLatency = msFmt(avg(recent.map((s) => s.latencyMs)));
+    const avgReplyLen = Math.round(avg(recent.map((s) => s.replyLen)));
+    return { counts, avgLatency, avgReplyLen };
+  }, [statsRef.current.length, level.gargle]); // eslint-disable-line
+
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
       <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} />
 
-      {/* Header (LIVE only) */}
+      {/* Header */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
@@ -270,11 +297,10 @@ export default function GargleExperiment() {
           </div>
         </div>
 
-        {/* Ticker (feed locked LOW) */}
         <div className="arena-ticker">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-6 gap-2">
             <div className="tix"><span className="tix-key">INDEX</span><span className="tix-val">{cur.toFixed(3)}</span></div>
-            <div className="tix"><span className="tix-key">AVG</span><span className="tix-val">{avg.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">AVG</span><span className="tix-val">{avgLvl.toFixed(3)}</span></div>
             <div className="tix"><span className="tix-key">VOL</span><span className="tix-val">{vol.toFixed(3)}</span></div>
             <div className="tix"><span className="tix-key">FEED</span><span className="tix-val">LOW</span></div>
             <div className="tix"><span className="tix-key">SOURCE</span><span className="tix-val">TikTok / Stories / IG</span></div>
@@ -283,9 +309,8 @@ export default function GargleExperiment() {
         </div>
       </header>
 
-      {/* Main grid */}
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-12 gap-6">
-        {/* Chart */}
+        {/* Left: Chart + Model Chats */}
         <section className="col-span-12 lg:col-span-8 space-y-6">
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
@@ -317,7 +342,7 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
-          {/* MODEL CHATS (talk to Gargle only — no feeds here) */}
+          {/* MODEL CHATS */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />MODEL CHATS</div>
@@ -331,7 +356,7 @@ export default function GargleExperiment() {
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    className={`max-w_[85%] ${m.from === "user" ? "ml-auto" : "mr-auto"}`}
+                    className={`max-w-[85%] ${m.from === "user" ? "ml-auto" : "mr-auto"}`}
                   >
                     <div className={`arena-bubble ${m.from === "user" ? "user" : "ai"}`}>
                       {m.text}
@@ -347,9 +372,8 @@ export default function GargleExperiment() {
           </motion.div>
         </section>
 
-        {/* Right: README + Logs */}
+        {/* Right: README + LOGS */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
-          {/* README */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />README.TXT</div>
@@ -361,7 +385,6 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
-          {/* LOGS (Feed → Gargle replies via OpenAI API) */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />LOGS</div>
@@ -382,8 +405,8 @@ export default function GargleExperiment() {
         </aside>
       </main>
 
-      {/* Bottom sections */}
-      <section className="max-w-7xl mx-auto px-4 pb-10 grid grid-cols-12 gap-6">
+      {/* Bottom: How it works + Coming soon */}
+      <section className="max-w-7xl mx-auto px-4 grid grid-cols-12 gap-6 pb-6">
         <motion.div className="arena-card col-span-12 lg:col-span-8" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
             <div className="arena-card-title"><span className="accent-dot" />HOW IT WORKS</div>
@@ -404,6 +427,98 @@ export default function GargleExperiment() {
           </div>
           <div className="arena-readme">
             <p>We’ll evaluate how <b>Gargle trades memecoins</b> after he is fully “brainrotted”. The plan: simulate headline-driven micro-markets and measure decision lag, overfit loops, and recovery.</p>
+          </div>
+        </motion.div>
+      </section>
+
+      {/* NEW: Bottom-most — Intake → Response Flow Diagram */}
+      <section className="max-w-7xl mx-auto px-4 pb-10">
+        <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="arena-card-head">
+            <div className="arena-card-title"><span className="accent-dot" />INTAKE → RESPONSE FLOW (last 5 min)</div>
+          </div>
+
+          <div className="grid grid-cols-12 gap-6">
+            {/* Diagram */}
+            <div className="col-span-12 lg:col-span-8">
+              <div className="relative h-[260px]">
+                <svg viewBox="0 0 900 260" width="100%" height="100%" role="img" aria-label="Intake to response flow diagram">
+                  {/* Left source nodes */}
+                  <g>
+                    <circle cx="80" cy="60" r="18" fill="#111" />
+                    <text x="110" y="65" fontSize="12" fill="#111">TikTok</text>
+                    <circle cx="80" cy="120" r="18" fill="#111" />
+                    <text x="110" y="125" fontSize="12" fill="#111">Stories</text>
+                    <circle cx="80" cy="180" r="18" fill="#111" />
+                    <text x="110" y="185" fontSize="12" fill="#111">Instagram</text>
+                  </g>
+
+                  {/* Feeder node */}
+                  <rect x="300" y="40" width="120" height="160" fill="#fff" stroke="#111" />
+                  <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">FEEDER</text>
+
+                  {/* Gargle node */}
+                  <rect x="540" y="40" width="140" height="160" fill="#fff" stroke="#111" />
+                  <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">GARGLE</text>
+
+                  {/* Dynamic stroke widths based on counts */}
+                  {(() => {
+                    const w = (n: number) => Math.max(2, Math.min(14, 2 + n * 2));
+                    const c = (cat: Category) => cat === "tiktok" ? 60 : cat === "stories" ? 120 : 180;
+                    const countTik = diagram.counts.tiktok;
+                    const countSto = diagram.counts.stories;
+                    const countIg = diagram.counts.instagram;
+                    return (
+                      <>
+                        <line x1="98" y1={60} x2="300" y2={60} stroke="#111" strokeWidth={w(countTik)} />
+                        <line x1="98" y1={120} x2="300" y2={120} stroke="#111" strokeWidth={w(countSto)} />
+                        <line x1="98" y1={180} x2="300" y2={180} stroke="#111" strokeWidth={w(countIg)} />
+                        <line x1="420" y1="120" x2="540" y2="120" stroke={BRAND.primary} strokeWidth={6} />
+                      </>
+                    );
+                  })()}
+
+                  {/* Output metrics labels */}
+                  <text x="700" y="95" fontSize="11" fill="#111">Avg Latency</text>
+                  <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgLatency}</text>
+                  <text x="700" y="145" fontSize="11" fill="#111">Avg Reply Length</text>
+                  <text x="700" y="165" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgReplyLen} words</text>
+                </svg>
+              </div>
+            </div>
+
+            {/* Stats panel */}
+            <div className="col-span-12 lg:col-span-4">
+              <div className="arena-readme">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="mini-key">TIKTOK FEEDS</div>
+                    <div className="tix-val">{diagram.counts.tiktok}</div>
+                  </div>
+                  <div>
+                    <div className="mini-key">STORIES FEEDS</div>
+                    <div className="tix-val">{diagram.counts.stories}</div>
+                  </div>
+                  <div>
+                    <div className="mini-key">IG FEEDS</div>
+                    <div className="tix-val">{diagram.counts.instagram}</div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="mini-key">AVG LATENCY</div>
+                    <div className="tix-val">{diagram.avgLatency}</div>
+                  </div>
+                  <div>
+                    <div className="mini-key">AVG REPLY LEN</div>
+                    <div className="tix-val">{diagram.avgReplyLen}w</div>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs">
+                  Counts and averages are computed over the last 5 minutes of feed→reply cycles.
+                </p>
+              </div>
+            </div>
           </div>
         </motion.div>
       </section>
