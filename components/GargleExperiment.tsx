@@ -29,7 +29,7 @@ const BRAND = { primary: "#2563eb" };
 const FEED_INTERVAL_MS = 3000;
 const REACTION_DELAY_MS = 800;
 const WINDOW_MS = 60_000;
-the SOFT_CAP_TOKENS_PER_MIN = 12_000;
+const SOFT_CAP_TOKENS_PER_MIN = 12_000; // <-- fixed "const"
 const ALPHA = 0.35;
 
 function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
@@ -164,7 +164,7 @@ export default function GargleExperiment() {
 
       // Gargle’s reply via OpenAI after slight delay
       setTimeout(async () => {
-        // Build short history from recent logs (role pinned with `as const`)
+        // Build short history from recent logs
         const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => ({
           role: (l.who === "feed" ? "user" : "assistant") as const,
           content: l.text.replace(/^Feed →\s*/, ""),
