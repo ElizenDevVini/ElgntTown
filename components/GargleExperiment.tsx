@@ -6,15 +6,6 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 
-/**
- * Gargle — Brainrot Lab (Arena Style)
- * - "MODEL CHATS" is the place to talk to Gargle
- * - Logs: Gargle always responds to each feed item
- * - Slower loop cadence
- * - Nav trimmed (no Leaderboard / Models)
- * - Powered by Claude label, orange hints preserved via CSS
- */
-
 type AgentId = "gargle";
 type Message = { from: "user" | AgentId; text: string; ts: number };
 type BrainrotPoint = { t: number } & Record<AgentId, number>;
@@ -26,19 +17,18 @@ type RangeKey = "ALL" | "2M";
 const AGENT = {
   id: "gargle" as const,
   name: "Gargle",
-  poweredBy: "Claude", // label only; backend can be OpenAI-normalized
+  poweredBy: "Claude",          // label only; backend can still be OpenAI-normalized
   backendModel: "gpt-4o-mini",
 };
 
-// keep your blue; CSS provides orange accents
-const BRAND = { primary: "#2563eb" };
+const BRAND = { primary: "#2563eb" }; // keep your blue
 
-// Tunables
+// --- metrics/tunables ---
 const WINDOW_MS = 60_000;
 const SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
-const FEED_INTERVAL_MS = 3000;     // slowed down
-const REACTION_DELAY_MS = 800;     // slight pause before Gargle replies to a feed
+const FEED_INTERVAL_MS = 3000;  // slowed down
+const REACTION_DELAY_MS = 800;  // small delay before Gargle replies to feed
 
 function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
 function computeIndex(samples: UsageSample[], now: number = Date.now()) {
@@ -60,7 +50,7 @@ function mulberry32(seed: number) {
 function simulatedResponse(rng: () => number, prompt: string, brainrot: number) {
   const fragments = [
     "drift detected", "context window saturated", "signal chasing",
-    "pattern echo", "semantic blur", "topic hop", "overfit loop"
+    "pattern echo", "semantic blur", "topic hop", "overfit loop",
   ];
   const pick = () => fragments[Math.floor(rng() * fragments.length)];
   const base = prompt.split(/\s+/).slice(0, Math.max(4, Math.floor(12 - brainrot * 6))).join(" ");
@@ -69,7 +59,7 @@ function simulatedResponse(rng: () => number, prompt: string, brainrot: number) 
   return `Gargle: ${base} — ${tail}${derail}`.trim();
 }
 
-// Emphasize TikTok, stories, and Instagram doomscrolling
+// Feeds emphasizing TikTok/stories/IG doomscrolling
 const FEEDS = {
   low: [
     "short-form clips (safe cuts) from TikTok",
@@ -105,7 +95,6 @@ function extractTextAndUsage(j: any): { text: string; usage: Usage } {
   return { text, usage };
 }
 
-// OpenAI-style backend (normalize to { choices, usage } on server)
 async function callLLM(userText: string, history: Message[]) {
   try {
     const payload = {
@@ -144,28 +133,26 @@ function computeMentalState(levels: number[]) {
 }
 
 export default function GargleExperiment() {
+  // ---- state (declare once) -------------------------------------------------
   const [intensity, setIntensity] = useState<Intensity>("medium");
   const [messages, setMessages] = useState<Message[]>([]);
   const [series, setSeries] = useState<BrainrotPoint[]>([]);
   const [level, setLevel] = useState<Record<AgentId, number>>({ gargle: 0 });
-  const [range, setRange] = useState<RangeKey>("ALL");
+  const [range, setRange] = useState<RangeKey>("ALL"); // <-- only declaration
 
+  // ---- refs/helpers ---------------------------------------------------------
   const usageRef = useRef<UsageSample[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const logsRef = useRef<HTMLDivElement | null>(null);
   const rng = useMemo(() => mulberry32(Math.floor(Date.now() % 1e7)), []);
-
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
-  // Helper to append a feed line AND ensure Gargle replies after a short delay
+  // Append a feed line and ensure Gargle replies after a short delay
   const appendFeedWithReply = (topic: string, nowTs: number) => {
-    // Feed log
     setMessages((prev) => {
       const next: Message[] = [...prev, { from: "user" as const, text: `Feed → ${topic}`, ts: nowTs }];
       return next.slice(-350);
     });
-
-    // Gargle reply (always)
     setTimeout(() => {
       const brainrot = level.gargle;
       const reaction = simulatedResponse(rng, topic, brainrot);
@@ -185,14 +172,11 @@ export default function GargleExperiment() {
       const bucket = FEEDS[intensity];
       const topic = bucket[Math.floor(rng() * bucket.length)];
 
-      // Ingest tokens for the feed
       const approxIn = 16 + Math.floor(rng() * (intensity === "high" ? 120 : intensity === "medium" ? 64 : 28));
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // Append feed + schedule Gargle reply (always)
       appendFeedWithReply(topic, now);
 
-      // Update index + chart
       const idx = computeIndex(usageRef.current, now);
       setLevel((prev) => ({ gargle: clamp(prev.gargle * (1 - ALPHA) + idx * ALPHA) }));
       setSeries((prev) => {
@@ -203,7 +187,7 @@ export default function GargleExperiment() {
     return () => clearInterval(id);
   }, [intensity, rng, level.gargle]);
 
-  // Manual chat with Gargle (MODEL CHATS)
+  // MODEL CHATS (talk to Gargle)
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const el = inputRef.current;
@@ -230,24 +214,25 @@ export default function GargleExperiment() {
     }
   }
 
+  // Derived metrics + range
   const mental = useMemo(() => computeMentalState(series.map((p) => p.gargle)), [series]);
   const cur = level.gargle;
   const avg = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
   const vol = mental.volatility ?? 0;
 
-  const [range, setRange] = useState<RangeKey>("ALL");
   const displaySeries = useMemo(() => {
     if (range === "ALL") return series;
-    return series.slice(-120);
+    return series.slice(-120); // ~2 minutes
   }, [series, range]);
 
   const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
 
+  // ------------------------ UI ------------------------
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
       <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} />
 
-      {/* Brand + minimal nav (LIVE only) */}
+      {/* Header with LIVE only */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
@@ -276,16 +261,13 @@ export default function GargleExperiment() {
         </div>
       </header>
 
-      {/* Main */}
+      {/* Main grid */}
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-12 gap-6">
         <section className="col-span-12 lg:col-span-8 space-y-6">
           {/* Chart */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                TOTAL BRAINROT
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />TOTAL BRAINROT</div>
               <div className="arena-tabs">
                 <button className={`arena-tab ${range === "ALL" ? "is-active" : ""}`} onClick={() => setRange("ALL")}>ALL</button>
                 <button className={`arena-tab ${range === "2M" ? "is-active" : ""}`} onClick={() => setRange("2M")}>2M</button>
@@ -312,17 +294,14 @@ export default function GargleExperiment() {
               </ResponsiveContainer>
             </div>
 
-            {/* Under-chart controls + mental state */}
+            {/* Controls + mental state */}
             <div className="arena-subgrid">
               <div className="arena-mini">
                 <div className="mini-key">FEED INTENSITY</div>
                 <div className="mini-controls">
                   {(["low", "medium", "high"] as const).map((lvl) => (
-                    <button
-                      key={lvl}
-                      onClick={() => setIntensity(lvl)}
-                      className={`mini-pill ${intensity === lvl ? "is-on" : ""}`}
-                    >
+                    <button key={lvl} onClick={() => setIntensity(lvl)}
+                      className={`mini-pill ${intensity === lvl ? "is-on" : ""}`}>
                       {lvl.toUpperCase()}
                     </button>
                   ))}
@@ -333,28 +312,23 @@ export default function GargleExperiment() {
               <div className="arena-mini">
                 <div className="mini-key">MENTAL STATE</div>
                 <ul className="mini-bars">
-                  {Object.entries(useMemo(() => computeMentalState(series.map(p => p.gargle)), [series]))
-                    .filter(([k]) => k !== "volatility")
-                    .map(([k, v]) => (
-                      <li key={k} className="mini-bar">
-                        <span className="mini-bar-name">{k.replace(/([A-Z])/g, " $1").toUpperCase()}</span>
-                        <span className="mini-bar-track">
-                          <span className="mini-bar-fill" style={{ width: `${(v as number * 100).toFixed(0)}%`, background: BRAND.primary }} />
-                        </span>
-                      </li>
-                    ))}
+                  {Object.entries(mental).filter(([k]) => k !== "volatility").map(([k, v]) => (
+                    <li key={k} className="mini-bar">
+                      <span className="mini-bar-name">{k.replace(/([A-Z])/g, " $1").toUpperCase()}</span>
+                      <span className="mini-bar-track">
+                        <span className="mini-bar-fill" style={{ width: `${(v * 100).toFixed(0)}%`, background: BRAND.primary }} />
+                      </span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
           </motion.div>
 
-          {/* MODEL CHATS (talk to Gargle) */}
+          {/* MODEL CHATS */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                MODEL CHATS
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />MODEL CHATS</div>
               <div className="arena-muted">talk to Gargle — press Enter</div>
             </div>
             <div className="h-[360px] overflow-y-auto px-5 py-4 space-y-3">
