@@ -8,9 +8,9 @@ import {
 
 /**
  * Gargle — Brainrot Lab (Arena Style)
- * - Always-on experiment
- * - Arena-like layout: ticker, tabs, chart, logs, README column
- * - White theme, no emojis, colors preserved
+ * Label tweaks: Powered by Claude, removed “Always On”.
+ * Feed now emphasizes TikTok brainrot, stories, and Instagram doomscrolling.
+ * Orange accents added (keeps original blue primary).
  */
 
 type AgentId = "gargle";
@@ -21,11 +21,17 @@ type UsageSample = { ts: number; in: number; out: number };
 type Intensity = "low" | "medium" | "high";
 type RangeKey = "ALL" | "2M";
 
-const AGENT = { id: "gargle" as const, name: "Gargle", poweredBy: "GPT", backendModel: "gpt-4o-mini" };
-// keep your existing accent color
-const BRAND = { primary: "#2563eb" };
+const AGENT = {
+  id: "gargle" as const,
+  name: "Gargle",
+  poweredBy: "Claude", // label only; backend can remain OpenAI
+  backendModel: "gpt-4o-mini",
+};
 
-// ---- math ----------
+// keep your blue; add orange accent
+const BRAND = { primary: "#2563eb", accent: "#ea580c" };
+
+// --- metrics ---
 const WINDOW_MS = 60_000;
 const SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
@@ -49,7 +55,10 @@ function mulberry32(seed: number) {
 }
 
 function simulatedResponse(rng: () => number, prompt: string, brainrot: number) {
-  const fragments = ["drift detected", "context window saturated", "signal chasing", "pattern echo", "semantic blur", "topic hop", "overfit loop"];
+  const fragments = [
+    "drift detected", "context window saturated", "signal chasing",
+    "pattern echo", "semantic blur", "topic hop", "overfit loop"
+  ];
   const pick = () => fragments[Math.floor(rng() * fragments.length)];
   const base = prompt.split(/\s+/).slice(0, Math.max(4, Math.floor(12 - brainrot * 6))).join(" ");
   const tail = Array.from({ length: Math.max(1, Math.floor(brainrot * 3)) }).map(pick).join(" · ");
@@ -57,10 +66,23 @@ function simulatedResponse(rng: () => number, prompt: string, brainrot: number) 
   return `Gargle: ${base} — ${tail}${derail}`.trim();
 }
 
+// Updated feeds to reflect TikTok/IG brainrot
 const FEEDS = {
-  low: ["mild trend headlines", "benign product reviews", "light meme summaries"],
-  medium: ["fast-paced social snippets", "contradictory takes", "quote-chain speculation"],
-  high: ["out-of-context fragments", "comment storms", "looping bait claims"],
+  low: [
+    "short-form clips (safe cuts) from TikTok",
+    "light meme summaries from stories",
+    "casual reels digests",
+  ],
+  medium: [
+    "brainrot TikTok clips",
+    "brainrot stories chains",
+    "mid-speed doomscrolling on Instagram explore",
+  ],
+  high: [
+    "aggressive doomscrolling on Instagram comments",
+    "out-of-context TikTok mashups",
+    "looping bait claims + stitched rants",
+  ],
 } as const;
 
 function extractTextAndUsage(j: any): { text: string; usage: Usage } {
@@ -85,7 +107,7 @@ async function callLLM(userText: string, history: Message[]) {
     const payload = {
       model: AGENT.backendModel,
       messages: [
-        { role: "system", content: "You are Gargle (GPT), under noisy brain-rot inputs. Be brief and resilient." },
+        { role: "system", content: "You are Gargle (Claude), under noisy brain-rot inputs. Be brief and resilient." },
         ...history.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })),
         { role: "user", content: userText },
       ],
@@ -117,7 +139,6 @@ function computeMentalState(levels: number[]) {
   return { focusDrift, coherence, anxiety, curiosity, stability, fatigue, volatility };
 }
 
-// ---- component ----------
 export default function GargleExperiment() {
   const [intensity, setIntensity] = useState<Intensity>("medium");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -132,18 +153,16 @@ export default function GargleExperiment() {
 
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
-  // feeder loop
+  // feeder loop (still runs; label removed per request)
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
       const bucket = FEEDS[intensity];
       const topic = bucket[Math.floor(rng() * bucket.length)];
 
-      // ingest
       const approxIn = 20 + Math.floor(rng() * (intensity === "high" ? 180 : intensity === "medium" ? 90 : 40));
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // feed log
       if (Math.random() < 0.7) {
         setMessages((prev) => {
           const next: Message[] = [...prev, { from: "user" as const, text: `Feed → ${topic}`, ts: now }];
@@ -151,7 +170,6 @@ export default function GargleExperiment() {
         });
       }
 
-      // index + chart
       const idx = computeIndex(usageRef.current, now);
       setLevel((prev) => ({ gargle: clamp(prev.gargle * (1 - ALPHA) + idx * ALPHA) }));
       setSeries((prev) => {
@@ -159,7 +177,6 @@ export default function GargleExperiment() {
         return [...prev, { t, gargle: level.gargle }].slice(-360);
       });
 
-      // autonomous reply sometimes
       if (Math.random() < 0.5) {
         const reaction = simulatedResponse(rng, topic, level.gargle);
         const approxOut = Math.max(8, Math.ceil(reaction.split(/\s+/).length * 1.3));
@@ -204,11 +221,9 @@ export default function GargleExperiment() {
   const avg = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
   const vol = mental.volatility ?? 0;
 
-  // range slice (arena-style ALL/72H tab clone; here: ALL vs last 120 ticks ~ 2m)
   const displaySeries = useMemo(() => {
     if (range === "ALL") return series;
-    const take = 120;
-    return series.slice(-take);
+    return series.slice(-120); // ~2m window
   }, [series, range]);
 
   const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
@@ -217,7 +232,7 @@ export default function GargleExperiment() {
     <div className="relative min-h-screen text-neutral-900 arena-root">
       <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} />
 
-      {/* top nav / brand */}
+      {/* Brand + nav */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
@@ -231,49 +246,34 @@ export default function GargleExperiment() {
             </div>
             <div className="arena-actions hidden md:flex">
               <span className="arena-chip">Powered by {AGENT.poweredBy}</span>
-              <span className="arena-chip">Always On</span>
+              {/* removed “Always On” chip per request */}
             </div>
           </div>
         </div>
-        {/* ticker */}
+
+        {/* Ticker */}
         <div className="arena-ticker">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-6 gap-2">
-            <div className="tix">
-              <span className="tix-key">INDEX</span>
-              <span className="tix-val">{cur.toFixed(3)}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">AVG</span>
-              <span className="tix-val">{avg.toFixed(3)}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">VOL</span>
-              <span className="tix-val">{vol.toFixed(3)}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">INTENSITY</span>
-              <span className="tix-val">{intensity.toUpperCase()}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">FEEDS</span>
-              <span className="tix-val">{FEEDS[intensity].length}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">AGENT</span>
-              <span className="tix-val">{AGENT.name}</span>
-            </div>
+            <div className="tix"><span className="tix-key">INDEX</span><span className="tix-val">{cur.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">AVG</span><span className="tix-val">{avg.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">VOL</span><span className="tix-val">{vol.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">INTENSITY</span><span className="tix-val">{intensity.toUpperCase()}</span></div>
+            <div className="tix"><span className="tix-key">FEEDS</span><span className="tix-val">{FEEDS[intensity].length}</span></div>
+            <div className="tix"><span className="tix-key">AGENT</span><span className="tix-val">{AGENT.name}</span></div>
           </div>
         </div>
       </header>
 
-      {/* main grid */}
+      {/* Main */}
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-12 gap-6">
-        {/* center column: chart + chat */}
         <section className="col-span-12 lg:col-span-8 space-y-6">
-          {/* chart panel styled like arena */}
+          {/* Chart */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">TOTAL BRAINROT</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" style={{ background: BRAND.accent }} />
+                TOTAL BRAINROT
+              </div>
               <div className="arena-tabs">
                 <button className={`arena-tab ${range === "ALL" ? "is-active" : ""}`} onClick={() => setRange("ALL")}>ALL</button>
                 <button className={`arena-tab ${range === "2M" ? "is-active" : ""}`} onClick={() => setRange("2M")}>2M</button>
@@ -282,6 +282,7 @@ export default function GargleExperiment() {
             <div className="relative h-[420px]">
               <div className="absolute right-4 top-4 arena-float-tag">
                 <span className="dot" style={{ background: BRAND.primary }} />
+                <span className="dot" style={{ background: BRAND.accent }} />
                 {AGENT.name} <b>{lastVal.toFixed(3)}</b>
               </div>
               <ResponsiveContainer width="100%" height="100%">
@@ -294,11 +295,12 @@ export default function GargleExperiment() {
                     labelStyle={{ fontSize: 11, color: "#111" }}
                     itemStyle={{ fontSize: 11, color: "#111" }}
                   />
-                  {/* keep your color, thicken stroke for arena look */}
                   <Line type="monotone" dataKey="gargle" dot={false} strokeWidth={3} stroke={BRAND.primary} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
+
+            {/* Subgrid */}
             <div className="arena-subgrid">
               <div className="arena-mini">
                 <div className="mini-key">FEED INTENSITY</div>
@@ -315,6 +317,7 @@ export default function GargleExperiment() {
                 </div>
                 <div className="mini-foot">{FEEDS[intensity].join(" · ")}</div>
               </div>
+
               <div className="arena-mini">
                 <div className="mini-key">MENTAL STATE</div>
                 <ul className="mini-bars">
@@ -331,10 +334,13 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
-          {/* chat panel */}
+          {/* Chat */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">MODELCHAT</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" style={{ background: BRAND.accent }} />
+                MODELCHAT
+              </div>
               <div className="arena-muted">type and press enter</div>
             </div>
             <div className="h-[360px] overflow-y-auto px-5 py-4 space-y-3">
@@ -355,36 +361,35 @@ export default function GargleExperiment() {
               </AnimatePresence>
             </div>
             <form onSubmit={onSubmit} className="arena-form">
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder={`MESSAGE ${AGENT.name}`}
-                className="arena-input"
-              />
+              <input ref={inputRef} type="text" placeholder={`MESSAGE ${AGENT.name}`} className="arena-input" />
               <button type="submit" className="arena-button">SEND</button>
             </form>
           </motion.div>
         </section>
 
-        {/* right column: README + logs */}
+        {/* Right: README + Logs */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">README.TXT</div>
-              <div className="arena-tabs">
-                <span className="arena-tab is-active">OVERVIEW</span>
+              <div className="arena-card-title">
+                <span className="accent-dot" style={{ background: BRAND.accent }} />
+                README.TXT
               </div>
+              <div className="arena-tabs"><span className="arena-tab is-active">OVERVIEW</span></div>
             </div>
             <div className="arena-readme">
-              <p><b>Gargle Lab</b> is an always-on benchmark that feeds a single agent with structured noise and measures drift in real time.</p>
-              <p>The metric tracked is the <b>Brainrot Index</b>, derived from tokens-per-minute over a sliding window. Mental state is inferred from level, delta, and short-term volatility.</p>
-              <p>Markets test trading agents. Noise tests reasoning agents. Let’s see how far Gargle can go before he loses the plot.</p>
+              <p><b>Gargle Lab</b> benchmarks a single agent exposed to noisy social inputs.</p>
+              <p>Feeds emphasize <b>brainrot TikTok clips</b>, <b>brainrot stories</b>, and <b>doomscrolling on Instagram</b>. The <b>Brainrot Index</b> derives from tokens/min over a sliding window; mental state is inferred from level, delta, and short-term volatility.</p>
+              <p>Copy claims can be adjusted; backend just needs to return <code>{'{ choices[0].message.content, usage }'}</code>.</p>
             </div>
           </motion.div>
 
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">LOGS</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" style={{ background: BRAND.accent }} />
+                LOGS
+              </div>
               <div className="arena-tabs"><span className="arena-tab is-active">ALL</span></div>
             </div>
             <div ref={logsRef} className="arena-logs">
