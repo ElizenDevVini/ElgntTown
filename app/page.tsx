@@ -1,6 +1,8 @@
 import dynamic from 'next/dynamic'
-const BrainrotLab = dynamic(() => import('../components/BrainrotLab'), { ssr: false })
+
+// Client component (animations, intervals)
+const GargleExperiment = dynamic(() => import('../components/GargleExperiment'), { ssr: false })
 
 export default function Page() {
-  return <BrainrotLab />
+  return <GargleExperiment />
 }
