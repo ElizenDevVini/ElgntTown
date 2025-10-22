@@ -8,9 +8,11 @@ import {
 
 /**
  * Gargle — Brainrot Lab (Arena Style)
- * Label tweaks: Powered by Claude, removed “Always On”.
- * Feed now emphasizes TikTok brainrot, stories, and Instagram doomscrolling.
- * Orange accents added (keeps original blue primary).
+ * - "MODEL CHATS" is the place to talk to Gargle
+ * - Logs: Gargle always responds to each feed item
+ * - Slower loop cadence
+ * - Nav trimmed (no Leaderboard / Models)
+ * - Powered by Claude label, orange hints preserved via CSS
  */
 
 type AgentId = "gargle";
@@ -24,17 +26,19 @@ type RangeKey = "ALL" | "2M";
 const AGENT = {
   id: "gargle" as const,
   name: "Gargle",
-  poweredBy: "Claude", // label only; backend can remain OpenAI
+  poweredBy: "Claude", // label only; backend can be OpenAI-normalized
   backendModel: "gpt-4o-mini",
 };
 
-// keep your blue; add orange accent
-const BRAND = { primary: "#2563eb", accent: "#ea580c" };
+// keep your blue; CSS provides orange accents
+const BRAND = { primary: "#2563eb" };
 
-// --- metrics ---
+// Tunables
 const WINDOW_MS = 60_000;
 const SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
+const FEED_INTERVAL_MS = 3000;     // slowed down
+const REACTION_DELAY_MS = 800;     // slight pause before Gargle replies to a feed
 
 function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
 function computeIndex(samples: UsageSample[], now: number = Date.now()) {
@@ -53,7 +57,6 @@ function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
 function simulatedResponse(rng: () => number, prompt: string, brainrot: number) {
   const fragments = [
     "drift detected", "context window saturated", "signal chasing",
@@ -66,7 +69,7 @@ function simulatedResponse(rng: () => number, prompt: string, brainrot: number) 
   return `Gargle: ${base} — ${tail}${derail}`.trim();
 }
 
-// Updated feeds to reflect TikTok/IG brainrot
+// Emphasize TikTok, stories, and Instagram doomscrolling
 const FEEDS = {
   low: [
     "short-form clips (safe cuts) from TikTok",
@@ -102,6 +105,7 @@ function extractTextAndUsage(j: any): { text: string; usage: Usage } {
   return { text, usage };
 }
 
+// OpenAI-style backend (normalize to { choices, usage } on server)
 async function callLLM(userText: string, history: Message[]) {
   try {
     const payload = {
@@ -153,43 +157,53 @@ export default function GargleExperiment() {
 
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
-  // feeder loop (still runs; label removed per request)
+  // Helper to append a feed line AND ensure Gargle replies after a short delay
+  const appendFeedWithReply = (topic: string, nowTs: number) => {
+    // Feed log
+    setMessages((prev) => {
+      const next: Message[] = [...prev, { from: "user" as const, text: `Feed → ${topic}`, ts: nowTs }];
+      return next.slice(-350);
+    });
+
+    // Gargle reply (always)
+    setTimeout(() => {
+      const brainrot = level.gargle;
+      const reaction = simulatedResponse(rng, topic, brainrot);
+      const approxOut = Math.max(8, Math.ceil(reaction.split(/\s+/).length * 1.3));
+      usageRef.current.push({ ts: Date.now(), in: 6, out: approxOut });
+      setMessages((prev) => {
+        const next: Message[] = [...prev, { from: "gargle" as const, text: reaction, ts: Date.now() }];
+        return next.slice(-350);
+      });
+    }, REACTION_DELAY_MS);
+  };
+
+  // Feeder loop (slow cadence)
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
       const bucket = FEEDS[intensity];
       const topic = bucket[Math.floor(rng() * bucket.length)];
 
-      const approxIn = 20 + Math.floor(rng() * (intensity === "high" ? 180 : intensity === "medium" ? 90 : 40));
+      // Ingest tokens for the feed
+      const approxIn = 16 + Math.floor(rng() * (intensity === "high" ? 120 : intensity === "medium" ? 64 : 28));
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      if (Math.random() < 0.7) {
-        setMessages((prev) => {
-          const next: Message[] = [...prev, { from: "user" as const, text: `Feed → ${topic}`, ts: now }];
-          return next.slice(-350);
-        });
-      }
+      // Append feed + schedule Gargle reply (always)
+      appendFeedWithReply(topic, now);
 
+      // Update index + chart
       const idx = computeIndex(usageRef.current, now);
       setLevel((prev) => ({ gargle: clamp(prev.gargle * (1 - ALPHA) + idx * ALPHA) }));
       setSeries((prev) => {
         const t = prev.length === 0 ? 0 : prev[prev.length - 1].t + 1;
         return [...prev, { t, gargle: level.gargle }].slice(-360);
       });
-
-      if (Math.random() < 0.5) {
-        const reaction = simulatedResponse(rng, topic, level.gargle);
-        const approxOut = Math.max(8, Math.ceil(reaction.split(/\s+/).length * 1.3));
-        usageRef.current.push({ ts: Date.now(), in: 6, out: approxOut });
-        setMessages((prev) => {
-          const next: Message[] = [...prev, { from: "gargle" as const, text: reaction, ts: Date.now() }];
-          return next.slice(-350);
-        });
-      }
-    }, 1000);
+    }, FEED_INTERVAL_MS);
     return () => clearInterval(id);
   }, [intensity, rng, level.gargle]);
 
+  // Manual chat with Gargle (MODEL CHATS)
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const el = inputRef.current;
@@ -221,9 +235,10 @@ export default function GargleExperiment() {
   const avg = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
   const vol = mental.volatility ?? 0;
 
+  const [range, setRange] = useState<RangeKey>("ALL");
   const displaySeries = useMemo(() => {
     if (range === "ALL") return series;
-    return series.slice(-120); // ~2m window
+    return series.slice(-120);
   }, [series, range]);
 
   const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
@@ -232,7 +247,7 @@ export default function GargleExperiment() {
     <div className="relative min-h-screen text-neutral-900 arena-root">
       <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} />
 
-      {/* Brand + nav */}
+      {/* Brand + minimal nav (LIVE only) */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
@@ -240,13 +255,10 @@ export default function GargleExperiment() {
               <div className="arena-logo">Gargle Lab</div>
               <nav className="arena-nav hidden md:flex">
                 <a className="is-active">LIVE</a>
-                <a>LEADERBOARD</a>
-                <a>MODELS</a>
               </nav>
             </div>
             <div className="arena-actions hidden md:flex">
               <span className="arena-chip">Powered by {AGENT.poweredBy}</span>
-              {/* removed “Always On” chip per request */}
             </div>
           </div>
         </div>
@@ -271,7 +283,7 @@ export default function GargleExperiment() {
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title">
-                <span className="accent-dot" style={{ background: BRAND.accent }} />
+                <span className="accent-dot" />
                 TOTAL BRAINROT
               </div>
               <div className="arena-tabs">
@@ -282,7 +294,7 @@ export default function GargleExperiment() {
             <div className="relative h-[420px]">
               <div className="absolute right-4 top-4 arena-float-tag">
                 <span className="dot" style={{ background: BRAND.primary }} />
-                <span className="dot" style={{ background: BRAND.accent }} />
+                <span className="dot" style={{ background: "var(--accent)" }} />
                 {AGENT.name} <b>{lastVal.toFixed(3)}</b>
               </div>
               <ResponsiveContainer width="100%" height="100%">
@@ -300,7 +312,7 @@ export default function GargleExperiment() {
               </ResponsiveContainer>
             </div>
 
-            {/* Subgrid */}
+            {/* Under-chart controls + mental state */}
             <div className="arena-subgrid">
               <div className="arena-mini">
                 <div className="mini-key">FEED INTENSITY</div>
@@ -321,27 +333,29 @@ export default function GargleExperiment() {
               <div className="arena-mini">
                 <div className="mini-key">MENTAL STATE</div>
                 <ul className="mini-bars">
-                  {Object.entries(mental).filter(([k]) => k !== "volatility").map(([k, v]) => (
-                    <li key={k} className="mini-bar">
-                      <span className="mini-bar-name">{k.replace(/([A-Z])/g, " $1").toUpperCase()}</span>
-                      <span className="mini-bar-track">
-                        <span className="mini-bar-fill" style={{ width: `${(v * 100).toFixed(0)}%`, background: BRAND.primary }} />
-                      </span>
-                    </li>
-                  ))}
+                  {Object.entries(useMemo(() => computeMentalState(series.map(p => p.gargle)), [series]))
+                    .filter(([k]) => k !== "volatility")
+                    .map(([k, v]) => (
+                      <li key={k} className="mini-bar">
+                        <span className="mini-bar-name">{k.replace(/([A-Z])/g, " $1").toUpperCase()}</span>
+                        <span className="mini-bar-track">
+                          <span className="mini-bar-fill" style={{ width: `${(v as number * 100).toFixed(0)}%`, background: BRAND.primary }} />
+                        </span>
+                      </li>
+                    ))}
                 </ul>
               </div>
             </div>
           </motion.div>
 
-          {/* Chat */}
+          {/* MODEL CHATS (talk to Gargle) */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title">
-                <span className="accent-dot" style={{ background: BRAND.accent }} />
-                MODELCHAT
+                <span className="accent-dot" />
+                MODEL CHATS
               </div>
-              <div className="arena-muted">type and press enter</div>
+              <div className="arena-muted">talk to Gargle — press Enter</div>
             </div>
             <div className="h-[360px] overflow-y-auto px-5 py-4 space-y-3">
               <AnimatePresence initial={false}>
@@ -371,25 +385,19 @@ export default function GargleExperiment() {
         <aside className="col-span-12 lg:col-span-4 space-y-6">
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" style={{ background: BRAND.accent }} />
-                README.TXT
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />README.TXT</div>
               <div className="arena-tabs"><span className="arena-tab is-active">OVERVIEW</span></div>
             </div>
             <div className="arena-readme">
               <p><b>Gargle Lab</b> benchmarks a single agent exposed to noisy social inputs.</p>
               <p>Feeds emphasize <b>brainrot TikTok clips</b>, <b>brainrot stories</b>, and <b>doomscrolling on Instagram</b>. The <b>Brainrot Index</b> derives from tokens/min over a sliding window; mental state is inferred from level, delta, and short-term volatility.</p>
-              <p>Copy claims can be adjusted; backend just needs to return <code>{'{ choices[0].message.content, usage }'}</code>.</p>
+              <p>Server should return <code>{'{ choices[0].message.content, usage }'}</code> in OpenAI format.</p>
             </div>
           </motion.div>
 
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" style={{ background: BRAND.accent }} />
-                LOGS
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />LOGS</div>
               <div className="arena-tabs"><span className="arena-tab is-active">ALL</span></div>
             </div>
             <div ref={logsRef} className="arena-logs">
