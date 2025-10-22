@@ -8,8 +8,11 @@ import {
 
 /**
  * Gargle — Brainrot Experiment (Powered by GPT)
- * Clean white UI, no emojis, Framer Motion animations, elegant cards,
- * background sheen, always-on feeder, Brainrot Index chart, logs, mental state.
+ * 2025-grade UI:
+ * - Structural redesign (12-col layout): Left control/state, Center chart+chat, Right logs
+ * - Elevated cards, crisp borders, compact KPI strip
+ * - Animated background sheen + floating orb, smooth motion (no emojis)
+ * - White theme preserved, same primary color
  */
 
 type AgentId = "gargle";
@@ -20,7 +23,7 @@ type UsageSample = { ts: number; in: number; out: number };
 type Intensity = "low" | "medium" | "high";
 
 const AGENT = { id: "gargle" as const, name: "Gargle", poweredBy: "GPT", backendModel: "gpt-4o-mini" };
-const BRAND = { primary: "#2563eb" }; // blue-600
+const BRAND = { primary: "#2563eb" }; // keep color
 
 // ---- Math helpers -----------------------------------------------------------
 const WINDOW_MS = 60_000;
@@ -109,7 +112,7 @@ function computeMentalState(levels: number[]) {
   const curiosity = clamp(1 - (0.6 * cur + 0.4 * volatility));
   const stability = clamp(1 - (0.6 * cur + 0.8 * volatility));
   const fatigue = clamp(0.6 * cur + 0.2 * volatility);
-  return { focusDrift, coherence, anxiety, curiosity, stability, fatigue };
+  return { focusDrift, coherence, anxiety, curiosity, stability, fatigue, volatility };
 }
 
 // ---- Component --------------------------------------------------------------
@@ -136,11 +139,11 @@ export default function GargleExperiment() {
       const approxIn = 20 + Math.floor(rng() * (intensity === "high" ? 180 : intensity === "medium" ? 90 : 40));
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // Log feed
+      // Log feed (as a "user" feed line)
       if (Math.random() < 0.7) {
         setMessages((prev) => {
           const next: Message[] = [...prev, { from: "user" as const, text: `Feed → ${topic}`, ts: now }];
-          return next.slice(-250);
+          return next.slice(-300);
         });
       }
 
@@ -149,7 +152,7 @@ export default function GargleExperiment() {
       setLevel((prev) => ({ gargle: clamp(prev.gargle * (1 - ALPHA) + idx * ALPHA) }));
       setSeries((prev) => {
         const t = prev.length === 0 ? 0 : prev[prev.length - 1].t + 1;
-        return [...prev, { t, gargle: level.gargle }].slice(-180);
+        return [...prev, { t, gargle: level.gargle }].slice(-240);
       });
 
       // Autonomous reaction sometimes
@@ -159,7 +162,7 @@ export default function GargleExperiment() {
         usageRef.current.push({ ts: Date.now(), in: 6, out: approxOut });
         setMessages((prev) => {
           const next: Message[] = [...prev, { from: "gargle" as const, text: reaction, ts: Date.now() }];
-          return next.slice(-250);
+          return next.slice(-300);
         });
       }
     }, 1000);
@@ -196,53 +199,104 @@ export default function GargleExperiment() {
   const kpis = React.useMemo(() => {
     const cur = level.gargle;
     const avg = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
-    return { cur, avg };
-  }, [level, series]);
+    const vol = mental.volatility ?? 0;
+    return { cur, avg, vol };
+  }, [level, series, mental]);
 
   // ---- UI -------------------------------------------------------------------
   return (
     <div className="relative min-h-screen text-neutral-900">
-      {/* Subtle animated sheen behind all content */}
-      <motion.div
-        aria-hidden
-        className="bg-sheen"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8 }}
-      />
-      {/* Floating gradient orb */}
+      {/* Animated sheen + orb (subtle, white theme) */}
+      <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }} />
       <motion.div
         aria-hidden
         className="absolute -z-10 w-[50rem] h-[50rem] rounded-full"
         style={{ background: "radial-gradient(closest-side, rgba(37,99,235,0.06), transparent 70%)" }}
-        initial={{ x: "-20%", y: "-10%", opacity: 0 }}
-        animate={{ x: ["-20%", "10%", "-10%"], y: ["-10%", "5%", "-5%"], opacity: 1 }}
-        transition={{ duration: 14, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
+        initial={{ x: "-15%", y: "-12%", opacity: 0 }}
+        animate={{ x: ["-15%", "12%", "-8%"], y: ["-12%", "6%", "-4%"], opacity: 1 }}
+        transition={{ duration: 18, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
       />
 
       {/* Header */}
       <header className="sticky top-0 z-30 backdrop-blur bg-white/70 border-b border-neutral-200">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <motion.div initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Gargle — Brainrot Experiment</h1>
-            <div className="text-xs text-neutral-500">Powered by GPT · Always On</div>
-          </motion.div>
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="badge">No Pause</span>
-            <span className="badge">White Theme</span>
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <motion.div initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+              <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Gargle — Brainrot Experiment</h1>
+              <div className="text-xs text-neutral-500">Powered by GPT · Always On</div>
+            </motion.div>
+
+            {/* KPI strip */}
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="hidden md:flex items-center gap-3"
+            >
+              <div className="kpi">
+                <span className="kpi-label">Current</span>
+                <span className="kpi-value">{kpis.cur.toFixed(2)}</span>
+              </div>
+              <div className="kpi">
+                <span className="kpi-label">Avg</span>
+                <span className="kpi-value">{kpis.avg.toFixed(2)}</span>
+              </div>
+              <div className="kpi">
+                <span className="kpi-label">Vol</span>
+                <span className="kpi-value">{kpis.vol.toFixed(2)}</span>
+              </div>
+              <div className="badge">No Pause</div>
+            </motion.div>
           </div>
         </div>
       </header>
 
-      {/* Top: Chart + Mental State */}
-      <section className="border-b border-neutral-200">
-        <div className="max-w-7xl mx-auto px-4 py-10 md:py-14 grid md:grid-cols-2 gap-8 items-start">
-          <motion.div className="card p-4" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm text-neutral-600">Brainrot Index</div>
-              <div className="text-xs text-neutral-500">current {kpis.cur.toFixed(2)} · avg {kpis.avg.toFixed(2)}</div>
+      {/* Main grid: 12 cols */}
+      <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-12 gap-6">
+        {/* Left: Controls + Mental State */}
+        <section className="col-span-12 lg:col-span-3 space-y-6">
+          <motion.div className="panel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="section-title">Controls</div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-neutral-600">Feed intensity</label>
+              <div className="flex gap-2">
+                {(["low", "medium", "high"] as const).map((lvl) => (
+                  <motion.button
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    key={lvl}
+                    onClick={() => setIntensity(lvl)}
+                    className={`pill ${intensity === lvl ? "pill-active" : ""}`}
+                  >
+                    {lvl}
+                  </motion.button>
+                ))}
+              </div>
             </div>
-            <div className="h-56 w-full">
+            <div className="mt-3 text-xs text-neutral-500">
+              Ingests: {FEEDS[intensity].join(" · ")}
+            </div>
+          </motion.div>
+
+          <motion.div className="panel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <div className="section-title">Mental State</div>
+            <ul className="space-y-3">
+              {Object.entries(mental).filter(([k]) => k !== "volatility").map(([k, v]) => (
+                <li key={k} className="grid grid-cols-5 items-center gap-2">
+                  <div className="col-span-2 text-xs text-neutral-800 capitalize">{k.replace(/([A-Z])/g, " $1")}</div>
+                  <div className="col-span-3 h-2 rounded-full bg-neutral-200 overflow-hidden">
+                    <div className="h-2 rounded-full" style={{ width: `${(v * 100).toFixed(0)}%`, background: BRAND.primary }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        </section>
+
+        {/* Center: Chart + Chat */}
+        <section className="col-span-12 lg:col-span-6 space-y-6">
+          <motion.div className="panel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="section-title">Brainrot Index</div>
+            <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={series} margin={{ left: 6, right: 12, top: 8, bottom: 0 }}>
                   <CartesianGrid stroke="#e5e7eb" vertical={false} />
@@ -254,51 +308,10 @@ export default function GargleExperiment() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-
-            <div className="mt-4 flex items-center gap-3">
-              <label className="text-sm text-neutral-600">Feed intensity</label>
-              <div className="flex gap-2">
-                {(["low", "medium", "high"] as const).map((lvl) => (
-                  <button
-                    key={lvl}
-                    onClick={() => setIntensity(lvl)}
-                    className={`px-3 py-1.5 rounded-md border text-sm transition ${
-                      intensity === lvl ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-300 hover:border-neutral-500"
-                    }`}
-                  >
-                    {lvl}
-                  </button>
-                ))}
-              </div>
-            </div>
           </motion.div>
 
-          <motion.div className="card p-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="text-sm text-neutral-600 mb-3">Gargle — Mental State</div>
-            <ul className="space-y-3">
-              {Object.entries(mental).map(([k, v]) => (
-                <li key={k} className="grid grid-cols-5 items-center gap-2">
-                  <div className="col-span-2 text-xs text-neutral-800 capitalize">{k.replace(/([A-Z])/g, " $1")}</div>
-                  <div className="col-span-3 h-2 rounded-full bg-neutral-200 overflow-hidden">
-                    <div className="h-2 rounded-full" style={{ width: `${(v * 100).toFixed(0)}%`, background: BRAND.primary }} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 text-xs text-neutral-500">Derived from index level, short-term delta, and volatility.</div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Bottom: Chat + Logs */}
-      <main className="max-w-7xl mx-auto px-4 py-10 grid lg:grid-cols-3 gap-8">
-        <section className="lg:col-span-2 space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-neutral-600">Talk to Gargle</div>
-            <div className="text-xs text-neutral-500">Type and press Enter</div>
-          </div>
-
-          <div className="card overflow-hidden">
+          <motion.div className="panel overflow-hidden" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <div className="section-title">Chat</div>
             <div className="h-[360px] overflow-y-auto px-5 py-4 space-y-3">
               <AnimatePresence initial={false}>
                 {messages.map((m, idx) => (
@@ -311,7 +324,7 @@ export default function GargleExperiment() {
                   >
                     <div
                       className={`px-3 py-2 rounded-xl border text-sm leading-relaxed ${
-                        m.from === "user" ? "bg-neutral-900 text-white border-neutral-900" : "bg-neutral-50 text-neutral-900 border-neutral-200"
+                        m.from === "user" ? "bubble-user" : "bubble-ai"
                       }`}
                     >
                       {m.text}
@@ -327,37 +340,37 @@ export default function GargleExperiment() {
                 placeholder={`Message ${AGENT.name}`}
                 className="flex-1 px-3 py-2 rounded-md bg-neutral-50 border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
-              <button type="submit" className="px-4 py-2 rounded-md border bg-neutral-900 text-white text-sm">Send</button>
+              <motion.button whileTap={{ scale: 0.98 }} type="submit" className="px-4 py-2 rounded-md border bg-neutral-900 text-white text-sm">
+                Send
+              </motion.button>
             </form>
-          </div>
+          </motion.div>
         </section>
 
-        <aside className="space-y-4">
-          <div className="card p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm text-neutral-600">Gargle Logs</div>
-              <div className="text-xs text-neutral-500">auto-ingesting</div>
-            </div>
-            <div ref={logsRef} className="h-[420px] overflow-y-auto pr-1">
+        {/* Right: Logs */}
+        <section className="col-span-12 lg:col-span-3 space-y-6">
+          <motion.div className="panel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="section-title">Gargle Logs</div>
+            <div ref={logsRef} className="h-[520px] overflow-y-auto pr-1">
               <ul className="space-y-2 text-sm">
                 {messages.map((m, i) => (
-                  <li key={i} className={`px-2 py-1.5 rounded-md border ${m.from === "user" ? "bg-neutral-50 border-neutral-200" : "bg-white border-neutral-200"}`}>
-                    <span className="text-xs text-neutral-500 mr-2">{new Date(m.ts).toLocaleTimeString()}</span>
-                    <span className="font-medium mr-1">{m.from === "user" ? "Feed" : AGENT.name}</span>
-                    <span className="text-neutral-800">{m.text}</span>
+                  <li key={i} className={`log-row ${m.from === "user" ? "log-feed" : "log-ai"}`}>
+                    <span className="log-ts">{new Date(m.ts).toLocaleTimeString()}</span>
+                    <span className="log-who">{m.from === "user" ? "Feed" : AGENT.name}</span>
+                    <span className="log-text">{m.text}</span>
                   </li>
                 ))}
               </ul>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="card p-4">
-            <div className="text-sm text-neutral-600 mb-2">Integration Notes</div>
+          <motion.div className="panel-muted" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <div className="section-title">Integration</div>
             <p className="text-xs text-neutral-600">
-              Backend must return <code>{'{ choices[0].message.content, usage }'}</code> (OpenAI-style).
+              Backend must return <code>{'{ choices[0].message.content, usage }'}</code> (OpenAI-style). The UI tolerates variations.
             </p>
-          </div>
-        </aside>
+          </motion.div>
+        </section>
       </main>
     </div>
   );
