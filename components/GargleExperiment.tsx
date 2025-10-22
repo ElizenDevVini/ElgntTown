@@ -29,7 +29,7 @@ const BRAND = { primary: "#2563eb" };
 const FEED_INTERVAL_MS = 3000;
 const REACTION_DELAY_MS = 800;
 const WINDOW_MS = 60_000;
-const SOFT_CAP_TOKENS_PER_MIN = 12_000; // <-- fixed "const"
+const SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
 
 function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
@@ -159,16 +159,16 @@ export default function GargleExperiment() {
       const approxIn = 14 + Math.floor(rng() * 22);
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // FEED log (pin to literal union with `as const`)
+      // FEED log (literal stays narrow)
       setLogs((prev) => [...prev, { who: "feed" as const, text: `Feed → ${topic}`, ts: now }].slice(-500));
 
       // Gargle’s reply via OpenAI after slight delay
       setTimeout(async () => {
-        // Build short history from recent logs
-        const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => ({
-          role: (l.who === "feed" ? "user" : "assistant") as const,
-          content: l.text.replace(/^Feed →\s*/, ""),
-        }));
+        // Build short history from recent logs (role computed then typed)
+        const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => {
+          const role: "user" | "assistant" = l.who === "feed" ? "user" : "assistant";
+          return { role, content: l.text.replace(/^Feed →\s*/, "") };
+        });
 
         const system =
           "You are Gargle being fed noisy social media 'brainrot'. Respond in 1–2 concise sentences that reveal drift or coping strategies. Avoid emojis.";
@@ -182,7 +182,7 @@ export default function GargleExperiment() {
 
         usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
 
-        // Gargle log (pin to literal)
+        // Gargle log (literal stays narrow)
         setLogs((prev) => [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500));
 
         // update index + chart
@@ -211,10 +211,10 @@ export default function GargleExperiment() {
     setChat((prev) => [...prev, { from: "user" as const, text, ts }]);
 
     const system = "You are Gargle. Keep answers compact and lucid. Avoid emojis.";
-    const history = chat.map((m): { role: "user" | "assistant"; content: string } => ({
-      role: (m.from === "user" ? "user" : "assistant") as const,
-      content: m.text,
-    }));
+    const history = chat.map((m): { role: "user" | "assistant"; content: string } => {
+      const role: "user" | "assistant" = m.from === "user" ? "user" : "assistant";
+      return { role, content: m.text };
+    });
 
     const out = await callLLM(system, text, history);
     const reply = out?.text?.trim() || "(no response)";
@@ -331,7 +331,7 @@ export default function GargleExperiment() {
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    className={`max-w-[85%] ${m.from === "user" ? "ml-auto" : "mr-auto"}`}
+                    className={`max-w_[85%] ${m.from === "user" ? "ml-auto" : "mr-auto"}`}
                   >
                     <div className={`arena-bubble ${m.from === "user" ? "user" : "ai"}`}>
                       {m.text}
