@@ -2,8 +2,8 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Brainrot Lab',
-  description: 'Which model loses the plot first?',
+  title: 'Gargle — Brainrot Experiment',
+  description: 'Always-on Claude-powered agent under brain-rot feed.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
