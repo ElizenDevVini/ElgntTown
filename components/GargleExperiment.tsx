@@ -21,7 +21,7 @@ type RangeKey = "ALL" | "2M";
 const AGENT = {
   id: "gargle" as const,
   name: "Gargle",
-  poweredBy: "Claude",
+  poweredBy: "Claude", // label only; backend call is OpenAI format
   backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini",
 };
 
@@ -29,7 +29,7 @@ const BRAND = { primary: "#2563eb" };
 const FEED_INTERVAL_MS = 3000;
 const REACTION_DELAY_MS = 800;
 const WINDOW_MS = 60_000;
-const SOFT_CAP_TOKENS_PER_MIN = 12_000;
+the SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
 
 function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
@@ -68,7 +68,7 @@ function extractTextAndUsage(j: any): { text: string; usage: Usage } {
   return { text, usage };
 }
 
-/** Single place the frontend calls (OpenAI-compatible JSON expected from /api/chat) */
+/** Frontend call — expects OpenAI-compatible JSON back from /api/chat */
 async function callLLM(
   systemPrompt: string,
   userText: string,
@@ -97,7 +97,7 @@ async function callLLM(
   }
 }
 
-/** Brainrot library — always pick a fresh topic; includes “tan tang sahur” */
+/** Brainrot topics library (fresh, includes “tan tang sahur”) */
 const BRAINTROTS = [
   "NPC live loop: ice cream so good remix",
   "day-in-the-life sigma grindset cut",
@@ -118,7 +118,6 @@ const BRAINTROTS = [
 ];
 
 function nextBrainrotTopic(rng: () => number, recent: string[]) {
-  const N = Math.min(16, BRAINTROTS.length - 1);
   for (let i = 0; i < 12; i++) {
     const cand = BRAINTROTS[Math.floor(rng() * BRAINTROTS.length)];
     if (!recent.includes(cand)) return cand;
@@ -127,14 +126,14 @@ function nextBrainrotTopic(rng: () => number, recent: string[]) {
 }
 
 export default function GargleExperiment() {
-  // -------- state (locked feed at LOW; no intensity controls) ---------------
+  // ---- state (feed locked to LOW; no controls) ----
   const [range, setRange] = useState<RangeKey>("ALL");
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [series, setSeries] = useState<BrainrotPoint[]>([]);
   const [level, setLevel] = useState<Record<AgentId, number>>({ gargle: 0 });
 
-  // -------- refs -------------------------------------------------------------
+  // ---- refs ----
   const usageRef = useRef<UsageSample[]>([]);
   const levelRef = useRef(0);
   const logsRef = useRef<HTMLDivElement | null>(null);
@@ -145,45 +144,46 @@ export default function GargleExperiment() {
   useEffect(() => { levelRef.current = level.gargle; }, [level.gargle]);
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [logs]);
 
-  // -------- feeder: LOW only, never exposed to chat, Gargle always replies ---
+  // ---- feeder: LOW only, never shown in chat, Gargle always replies ----
   useEffect(() => {
-    const id = setInterval(async () => {
+    const id = setInterval(() => {
       const now = Date.now();
+
+      // fresh topic
       const recent = recentTopicsRef.current;
       const topic = nextBrainrotTopic(rng, recent);
       recent.push(topic);
       if (recent.length > 16) recent.shift();
 
-      // ingest tokens for the feed (LOW)
+      // token ingest for LOW feed
       const approxIn = 14 + Math.floor(rng() * 22);
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // log the FEED  (literal narrow type via `as const`)
-      setLogs((prev) =>
-        [...prev, { who: "feed" as const, text: `Feed → ${topic}`, ts: now }].slice(-500)
-      );
+      // FEED log (pin to literal union with `as const`)
+      setLogs((prev) => [...prev, { who: "feed" as const, text: `Feed → ${topic}`, ts: now }].slice(-500));
 
-      // slight delay then call LLM for Gargle’s reply
+      // Gargle’s reply via OpenAI after slight delay
       setTimeout(async () => {
+        // Build short history from recent logs (role pinned with `as const`)
+        const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => ({
+          role: (l.who === "feed" ? "user" : "assistant") as const,
+          content: l.text.replace(/^Feed →\s*/, ""),
+        }));
+
         const system =
           "You are Gargle being fed noisy social media 'brainrot'. Respond in 1–2 concise sentences that reveal drift or coping strategies. Avoid emojis.";
-        const historyFromLogs: Array<{ role: "user" | "assistant"; content: string }> =
-          logs.slice(-8).map((l) => ({
-            role: l.who === "feed" ? "user" : "assistant",
-            content: l.text.replace(/^Feed →\s*/, ""),
-          }));
 
         const out = await callLLM(system, topic, historyFromLogs);
         const reply = out?.text?.trim() || "(no response)";
+
         const inTok = out?.usage?.prompt_tokens ?? 0;
-        const outTok = out?.usage?.completion_tokens ?? (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
+        const outTok = out?.usage?.completion_tokens ??
+          (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
 
         usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
 
-        // append Gargle line (narrow literal)
-        setLogs((prev) =>
-          [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500)
-        );
+        // Gargle log (pin to literal)
+        setLogs((prev) => [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500));
 
         // update index + chart
         const idx = computeIndex(usageRef.current, Date.now());
@@ -197,9 +197,9 @@ export default function GargleExperiment() {
     }, FEED_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [rng, logs]); // logs included so history sampling stays fresh
+  }, [rng, logs]); // keep history fresh
 
-  // -------- MODEL CHATS: user talks to Gargle (no feeds here) ---------------
+  // ---- MODEL CHATS: user talks to Gargle (no feeds here) ----
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const el = inputRef.current;
@@ -211,11 +211,16 @@ export default function GargleExperiment() {
     setChat((prev) => [...prev, { from: "user" as const, text, ts }]);
 
     const system = "You are Gargle. Keep answers compact and lucid. Avoid emojis.";
-    const history = chat.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text }));
+    const history = chat.map((m): { role: "user" | "assistant"; content: string } => ({
+      role: (m.from === "user" ? "user" : "assistant") as const,
+      content: m.text,
+    }));
+
     const out = await callLLM(system, text, history);
     const reply = out?.text?.trim() || "(no response)";
     const inTok = out?.usage?.prompt_tokens ?? 0;
-    const outTok = out?.usage?.completion_tokens ?? (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
+    const outTok = out?.usage?.completion_tokens ??
+      (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
 
     usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
     setChat((prev) => [...prev, { from: "gargle" as const, text: reply, ts: ts + 300 }]);
@@ -229,7 +234,7 @@ export default function GargleExperiment() {
     });
   }
 
-  // -------- derived ----------------------------------------------------------
+  // ---- derived ----
   const cur = level.gargle;
   const avg = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
   const vol = useMemo(() => {
@@ -244,7 +249,7 @@ export default function GargleExperiment() {
   const displaySeries = useMemo(() => (range === "ALL" ? series : series.slice(-120)), [series, range]);
   const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
 
-  // ------------------------------- UI ---------------------------------------
+  // ---- UI ----
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
       <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} />
@@ -265,7 +270,7 @@ export default function GargleExperiment() {
           </div>
         </div>
 
-        {/* Ticker (intensity locked to LOW) */}
+        {/* Ticker (feed locked LOW) */}
         <div className="arena-ticker">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-6 gap-2">
             <div className="tix"><span className="tix-key">INDEX</span><span className="tix-val">{cur.toFixed(3)}</span></div>
@@ -280,9 +285,8 @@ export default function GargleExperiment() {
 
       {/* Main grid */}
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-12 gap-6">
-        {/* Center: Chart + Model Chats */}
+        {/* Chart */}
         <section className="col-span-12 lg:col-span-8 space-y-6">
-          {/* Chart */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />TOTAL BRAINROT</div>
