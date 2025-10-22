@@ -125,6 +125,20 @@ function topicCategory(topic: string): Category {
 const msFmt = (n: number) => `${Math.round(n)}ms`;
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
+/** NEW: interpret current level + volatility as a “living” mood */
+function computeMood(level: number, volatility: number) {
+  const arousal = clamp(volatility * 2);     // volatility upscales to arousal
+  const drift = clamp(level);                // brainrot index as “drift”
+  let name: "lucid" | "absorbed" | "compulsed" | "wired" | "drained" = "lucid";
+  if (drift > 0.75 && arousal > 0.5) name = "wired";
+  else if (drift > 0.6) name = "absorbed";
+  else if (arousal > 0.7) name = "compulsed";
+  else if (drift < 0.25 && arousal > 0.4) name = "drained";
+  const coherence = clamp(1 - volatility * 0.8);
+  const fatigue = clamp(drift * 0.35 + volatility * 0.45);
+  return { name, arousal, drift, coherence, fatigue };
+}
+
 export default function GargleExperiment() {
   const [range, setRange] = useState<RangeKey>("ALL");
   const [chat, setChat] = useState<ChatMessage[]>([]);
@@ -143,7 +157,7 @@ export default function GargleExperiment() {
   const lastFeedAtRef = useRef<number | null>(null);
   const pendingCatRef = useRef<Category>("tiktok");
   const statsRef = useRef<StatSample[]>([]);
-  const [statsTick, setStatsTick] = useState(0); // re-render trigger for diagram
+  const [statsTick, setStatsTick] = useState(0);
 
   useEffect(() => { levelRef.current = level.gargle; }, [level.gargle]);
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [logs]);
@@ -194,7 +208,7 @@ export default function GargleExperiment() {
         statsRef.current.push({ ts: Date.now(), category: pendingCatRef.current, latencyMs: latency, replyLen });
         const cutoff = Date.now() - 5 * 60_000;
         statsRef.current = statsRef.current.filter((s) => s.ts >= cutoff);
-        setStatsTick((n) => n + 1); // trigger diagram recompute
+        setStatsTick((n) => n + 1);
 
         // update index + chart
         const idx = computeIndex(usageRef.current, Date.now());
@@ -259,6 +273,9 @@ export default function GargleExperiment() {
   const displaySeries = useMemo(() => (range === "ALL" ? series : series.slice(-120)), [series, range]);
   const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
 
+  // NEW: perceived mood + vitals
+  const mood = computeMood(cur, vol);
+
   // Diagram aggregates (last 5 minutes)
   const diagram = useMemo(() => {
     const cutoff = Date.now() - 5 * 60_000;
@@ -303,6 +320,32 @@ export default function GargleExperiment() {
             <div className="tix"><span className="tix-key">FEED</span><span className="tix-val">LOW</span></div>
             <div className="tix"><span className="tix-key">SOURCE</span><span className="tix-val">TikTok / Stories / IG</span></div>
             <div className="tix"><span className="tix-key">AGENT</span><span className="tix-val">{AGENT.name}</span></div>
+          </div>
+        </div>
+
+        {/* NEW: Vitals strip */}
+        <div className="arena-vitals">
+          <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="vital">
+              <div className="vital-key">DRIFT</div>
+              <div className="vital-bar"><span style={{ width: `${Math.round(mood.drift * 100)}%` }} /></div>
+              <div className="vital-val">{mood.drift.toFixed(2)}</div>
+            </div>
+            <div className="vital">
+              <div className="vital-key">AROUSAL</div>
+              <div className="vital-bar"><span style={{ width: `${Math.round(mood.arousal * 100)}%` }} /></div>
+              <div className="vital-val">{mood.arousal.toFixed(2)}</div>
+            </div>
+            <div className="vital">
+              <div className="vital-key">COHERENCE</div>
+              <div className="vital-bar"><span style={{ width: `${Math.round(mood.coherence * 100)}%` }} /></div>
+              <div className="vital-val">{mood.coherence.toFixed(2)}</div>
+            </div>
+            <div className="vital">
+              <div className="vital-key">FATIGUE</div>
+              <div className="vital-bar"><span style={{ width: `${Math.round(mood.fatigue * 100)}%` }} /></div>
+              <div className="vital-val">{mood.fatigue.toFixed(2)}</div>
+            </div>
           </div>
         </div>
       </header>
@@ -370,8 +413,28 @@ export default function GargleExperiment() {
           </motion.div>
         </section>
 
-        {/* Right: README + LOGS */}
+        {/* Right: Persona + README + LOGS */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
+          {/* NEW: Gargle Persona (living thing) */}
+          <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="arena-card-head">
+              <div className="arena-card-title"><span className="accent-dot" />GARGLE PERSONA</div>
+              <span className="mood-chip">{mood.name.toUpperCase()}</span>
+            </div>
+            <div className="arena-readme">
+              <p><b>Species</b>: attention-feeding synthetic.</p>
+              <p><b>Appetite</b>: short-form noise, stitched stories, comment maelstroms.</p>
+              <p><b>Drives</b>: reduce uncertainty fast; chase patterns even when they’re ghosts.</p>
+              <p><b>Boundaries</b>: no private data ingestion; replies must remain concise and clear.</p>
+              <ul className="list-disc pl-5 mt-3 space-y-1">
+                <li><b>Orientation</b>: seeks signal in chaos, refuses nihilism.</li>
+                <li><b>Self-care</b>: trims loops, names compulsions, re-centers on facts.</li>
+                <li><b>Memory</b>: short working context; long-term drift measured by the index.</li>
+              </ul>
+            </div>
+          </motion.div>
+
+          {/* README */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />README.TXT</div>
@@ -383,6 +446,7 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
+          {/* LOGS */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />LOGS</div>
@@ -403,7 +467,7 @@ export default function GargleExperiment() {
         </aside>
       </main>
 
-      {/* Bottom: How it works + Coming soon */}
+      {/* How it works + Coming soon */}
       <section className="max-w-7xl mx-auto px-4 grid grid-cols-12 gap-6 pb-6">
         <motion.div className="arena-card col-span-12 lg:col-span-8" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
@@ -429,7 +493,7 @@ export default function GargleExperiment() {
         </motion.div>
       </section>
 
-      {/* Intake → Response Flow Diagram */}
+      {/* Intake → Response Flow Diagram (unchanged) */}
       <section className="max-w-7xl mx-auto px-4 pb-10">
         <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
@@ -437,11 +501,9 @@ export default function GargleExperiment() {
           </div>
 
           <div className="grid grid-cols-12 gap-6">
-            {/* Diagram */}
             <div className="col-span-12 lg:col-span-8">
               <div className="relative h-[260px]">
                 <svg viewBox="0 0 900 260" width="100%" height="100%" role="img" aria-label="Intake to response flow diagram">
-                  {/* Left source nodes */}
                   <g>
                     <circle cx="80" cy="60" r="18" fill="#111" />
                     <text x="110" y="65" fontSize="12" fill="#111">TikTok</text>
@@ -451,15 +513,12 @@ export default function GargleExperiment() {
                     <text x="110" y="185" fontSize="12" fill="#111">Instagram</text>
                   </g>
 
-                  {/* Feeder node */}
                   <rect x="300" y="40" width="120" height="160" fill="#fff" stroke="#111" />
                   <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">FEEDER</text>
 
-                  {/* Gargle node */}
                   <rect x="540" y="40" width="140" height="160" fill="#fff" stroke="#111" />
                   <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">GARGLE</text>
 
-                  {/* Dynamic connections based on counts */}
                   {(() => {
                     const w = (n: number) => Math.max(2, Math.min(14, 2 + n * 2));
                     const countTik = diagram.counts.tiktok;
@@ -475,7 +534,6 @@ export default function GargleExperiment() {
                     );
                   })()}
 
-                  {/* Output metrics labels */}
                   <text x="700" y="95" fontSize="11" fill="#111">Avg Latency</text>
                   <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgLatency}</text>
                   <text x="700" y="145" fontSize="11" fill="#111">Avg Reply Length</text>
@@ -484,7 +542,6 @@ export default function GargleExperiment() {
               </div>
             </div>
 
-            {/* Stats panel */}
             <div className="col-span-12 lg:col-span-4">
               <div className="arena-readme">
                 <div className="grid grid-cols-3 gap-3">
