@@ -139,11 +139,11 @@ export default function GargleExperiment() {
   const rng = useMemo(() => mulberry32(Math.floor(Date.now() % 1e7)), []);
   const recentTopicsRef = useRef<string[]>([]);
 
-  // Stats for diagram
+  // Diagram stats
   const lastFeedAtRef = useRef<number | null>(null);
   const pendingCatRef = useRef<Category>("tiktok");
   const statsRef = useRef<StatSample[]>([]);
-  const [, forceStats] = useState(0);
+  const [statsTick, setStatsTick] = useState(0); // re-render trigger for diagram
 
   useEffect(() => { levelRef.current = level.gargle; }, [level.gargle]);
   useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [logs]);
@@ -187,16 +187,14 @@ export default function GargleExperiment() {
 
         setLogs((prev) => [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500));
 
-        // record stats
+        // record stats and keep last 5 minutes
         const start = lastFeedAtRef.current ?? Date.now();
         const latency = Date.now() - start;
         const replyLen = reply ? reply.split(/\s+/).length : 0;
         statsRef.current.push({ ts: Date.now(), category: pendingCatRef.current, latencyMs: latency, replyLen });
-        // keep ~5 minutes
         const cutoff = Date.now() - 5 * 60_000;
-        statsRef.current = { current: statsRef.current.current } as any; // (no-op for TS)
-        statsRef.current = { ...statsRef }.current as any; // not needed; we’ll just filter when reading
-        forceStats((n) => n + 1); // trigger re-render
+        statsRef.current = statsRef.current.filter((s) => s.ts >= cutoff);
+        setStatsTick((n) => n + 1); // trigger diagram recompute
 
         // update index + chart
         const idx = computeIndex(usageRef.current, Date.now());
@@ -275,7 +273,7 @@ export default function GargleExperiment() {
     const avgLatency = msFmt(avg(recent.map((s) => s.latencyMs)));
     const avgReplyLen = Math.round(avg(recent.map((s) => s.replyLen)));
     return { counts, avgLatency, avgReplyLen };
-  }, [statsRef.current.length, level.gargle]); // eslint-disable-line
+  }, [statsTick]);
 
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
@@ -431,7 +429,7 @@ export default function GargleExperiment() {
         </motion.div>
       </section>
 
-      {/* NEW: Bottom-most — Intake → Response Flow Diagram */}
+      {/* Intake → Response Flow Diagram */}
       <section className="max-w-7xl mx-auto px-4 pb-10">
         <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
@@ -461,10 +459,9 @@ export default function GargleExperiment() {
                   <rect x="540" y="40" width="140" height="160" fill="#fff" stroke="#111" />
                   <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">GARGLE</text>
 
-                  {/* Dynamic stroke widths based on counts */}
+                  {/* Dynamic connections based on counts */}
                   {(() => {
                     const w = (n: number) => Math.max(2, Math.min(14, 2 + n * 2));
-                    const c = (cat: Category) => cat === "tiktok" ? 60 : cat === "stories" ? 120 : 180;
                     const countTik = diagram.counts.tiktok;
                     const countSto = diagram.counts.stories;
                     const countIg = diagram.counts.instagram;
