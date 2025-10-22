@@ -2,7 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
-  height: 100%;
-  background: white;
+/* Polished white with subtle layered texture */
+html, body { height: 100%; background: white; }
+
+.bg-sheen {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(0,0,0,0.03), transparent 60%),
+    radial-gradient(800px 500px at 90% 20%, rgba(0,0,0,0.025), transparent 60%),
+    radial-gradient(600px 400px at 30% 100%, rgba(0,0,0,0.02), transparent 60%);
+}
+
+.card {
+  @apply rounded-2xl border border-card-border bg-card;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 8px 30px rgba(0,0,0,0.06);
+}
+
+.card-muted {
+  @apply rounded-2xl border border-card-border bg-card-muted;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 8px 30px rgba(0,0,0,0.05);
+}
+
+.badge {
+  @apply px-2 py-0.5 rounded bg-neutral-100 border border-neutral-200 text-xs;
 }
