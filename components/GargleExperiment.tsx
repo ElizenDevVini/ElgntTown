@@ -7,7 +7,7 @@ import {
 } from "recharts";
 
 /**
- * Gargle — Brainrot Experiment (Powered by Claude)
+ * Gargle — Brainrot Experiment (Powered by GPT)
  * Clean white UI, no emojis, Framer Motion animations, elegant cards,
  * background sheen, always-on feeder, Brainrot Index chart, logs, mental state.
  */
@@ -19,7 +19,7 @@ type Usage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?
 type UsageSample = { ts: number; in: number; out: number };
 type Intensity = "low" | "medium" | "high";
 
-const AGENT = { id: "gargle" as const, name: "Gargle", poweredBy: "Claude", backendModel: "claude-3-5-sonnet-latest" };
+const AGENT = { id: "gargle" as const, name: "Gargle", poweredBy: "GPT", backendModel: "gpt-4o-mini" };
 const BRAND = { primary: "#2563eb" }; // blue-600
 
 // ---- Math helpers -----------------------------------------------------------
@@ -80,7 +80,7 @@ async function callLLM(userText: string, history: Message[]) {
     const payload = {
       model: AGENT.backendModel,
       messages: [
-        { role: "system", content: "You are Gargle (Claude), under noisy brain-rot inputs. Be brief and resilient." },
+        { role: "system", content: "You are Gargle (GPT), under noisy brain-rot inputs. Be brief and resilient." },
         ...history.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })),
         { role: "user", content: userText },
       ],
@@ -138,7 +138,10 @@ export default function GargleExperiment() {
 
       // Log feed
       if (Math.random() < 0.7) {
-        setMessages((prev) => [...prev, { from: "user", text: `Feed → ${topic}`, ts: now }].slice(-250));
+        setMessages((prev) => {
+          const next: Message[] = [...prev, { from: "user" as const, text: `Feed → ${topic}`, ts: now }];
+          return next.slice(-250);
+        });
       }
 
       // Update index + chart
@@ -154,7 +157,10 @@ export default function GargleExperiment() {
         const reaction = simulatedResponse(rng, topic, level.gargle);
         const approxOut = Math.max(8, Math.ceil(reaction.split(/\s+/).length * 1.3));
         usageRef.current.push({ ts: Date.now(), in: 6, out: approxOut });
-        setMessages((prev) => [...prev, { from: "gargle", text: reaction, ts: Date.now() }].slice(-250));
+        setMessages((prev) => {
+          const next: Message[] = [...prev, { from: "gargle" as const, text: reaction, ts: Date.now() }];
+          return next.slice(-250);
+        });
       }
     }, 1000);
     return () => clearInterval(id);
@@ -168,7 +174,7 @@ export default function GargleExperiment() {
     el.value = "";
     const ts = Date.now();
 
-    setMessages((prev) => [...prev, { from: "user", text, ts }]);
+    setMessages((prev) => [...prev, { from: "user" as const, text, ts }]);
 
     const res = await callLLM(text, messages);
     if (res) {
@@ -176,13 +182,13 @@ export default function GargleExperiment() {
       const inTok = usage.prompt_tokens ?? 0;
       const outTok = usage.completion_tokens ?? (usage.total_tokens ? Math.max(0, usage.total_tokens - inTok) : 0);
       usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
-      setMessages((prev) => [...prev, { from: "gargle", text: reply || "", ts: ts + 400 }]);
+      setMessages((prev) => [...prev, { from: "gargle" as const, text: reply || "", ts: ts + 400 }]);
     } else {
       const reply = simulatedResponse(rng, text, level.gargle);
       const approxOut = Math.max(8, Math.ceil(reply.split(/\s+/).length * 1.3));
       const approxIn = Math.max(4, Math.ceil(text.split(/\s+/).length * 1.0));
       usageRef.current.push({ ts: Date.now(), in: approxIn, out: approxOut });
-      setMessages((prev) => [...prev, { from: "gargle", text: reply, ts: ts + 400 }]);
+      setMessages((prev) => [...prev, { from: "gargle" as const, text: reply, ts: ts + 400 }]);
     }
   }
 
@@ -219,7 +225,7 @@ export default function GargleExperiment() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <motion.div initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
             <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Gargle — Brainrot Experiment</h1>
-            <div className="text-xs text-neutral-500">Powered by Claude · Always On</div>
+            <div className="text-xs text-neutral-500">Powered by GPT · Always On</div>
           </motion.div>
           <div className="hidden sm:flex items-center gap-2">
             <span className="badge">No Pause</span>
@@ -345,11 +351,10 @@ export default function GargleExperiment() {
             </div>
           </div>
 
-          <div className="card-muted p-4">
+          <div className="card p-4">
             <div className="text-sm text-neutral-600 mb-2">Integration Notes</div>
             <p className="text-xs text-neutral-600">
               Backend must return <code>{'{ choices[0].message.content, usage }'}</code> (OpenAI-style).
-              The UI tolerates Anthropic by reshaping on the server.
             </p>
           </div>
         </aside>
