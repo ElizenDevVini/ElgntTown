@@ -2,8 +2,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
-import MascotBadge from "./MascotBadge";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LineChart,
@@ -265,7 +263,8 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     const xs = Array.from({ length: n }, (_, i) => i);
     const xbar = (n - 1) / 2;
     const ybar = avg(slice);
-    let num = 0, den = 0;
+    let num = 0,
+      den = 0;
     for (let i = 0; i < n; i++) {
       num += (xs[i] - xbar) * (slice[i] - ybar);
       den += (xs[i] - xbar) ** 2;
@@ -462,12 +461,11 @@ export default function GargleExperiment() {
   /** ------------------------------ UI -------------------------- */
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
-      {/* Header (non-sticky, simplified) */}
+      {/* Header (no mascot, no external layout component) */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-3">
-              <MascotBadge size={40} />
               <div className="arena-logo">Gargle Lab</div>
             </div>
             <div className="flex items-center gap-3">
@@ -504,11 +502,6 @@ export default function GargleExperiment() {
               </div>
             </div>
             <div className="relative h-[420px]">
-              <div className="absolute right-4 top-4 arena-float-tag">
-                <span className="dot" style={{ background: BRAND.primary }} />
-                <span className="dot" style={{ background: "var(--accent)" }} />
-                {AGENT.name} <b>{lastVal.toFixed(3)}</b>
-              </div>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={displaySeries} margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
                   <CartesianGrid stroke="#e5e7eb" vertical={false} />
@@ -522,11 +515,6 @@ export default function GargleExperiment() {
                   <Line type="monotone" dataKey="gargle" dot={false} strokeWidth={3} stroke={BRAND.primary} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
-
-              {/* Mascot watermark */}
-              <div className="mascot-watermark">
-                <Image src="/gargle-mascot.png" alt="" width={160} height={160} />
-              </div>
             </div>
           </motion.div>
 
