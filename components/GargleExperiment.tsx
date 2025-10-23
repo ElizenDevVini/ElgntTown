@@ -33,7 +33,7 @@ const AGENT = {
 };
 
 // ⬇️ Edit this string in-place when you have your contract address.
-const CA_HARDCODED = "TBA";
+const CA_HARDCODED = "ybuyuygyggy";
 
 const SOCIAL = {
   twitter: "https://x.com/garglellm?s=21",
