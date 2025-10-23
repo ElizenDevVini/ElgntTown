@@ -2,6 +2,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import MascotBadge from "./MascotBadge";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LineChart,
@@ -21,7 +23,6 @@ type BrainrotPoint = { t: number } & Record<AgentId, number>;
 type Usage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 type UsageSample = { ts: number; in: number; out: number };
 type RangeKey = "ALL" | "2M";
-
 type Category = "tiktok" | "stories" | "instagram";
 type StatSample = { ts: number; category: Category; latencyMs: number; replyLen: number };
 
@@ -31,6 +32,12 @@ const AGENT = {
   name: "Gargle",
   poweredBy: "Claude", // label only
   backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini",
+};
+
+const SOCIAL = {
+  twitter: "https://x.com/garglellm?s=21",
+  github: "https://github.com/llm-brain-rot/llm-brain-rot?tab=readme-ov-file#-model",
+  ca: process.env.NEXT_PUBLIC_GARGLE_CA || "TBA",
 };
 
 const BRAND = { primary: "#2563eb" }; // chart blue
@@ -48,7 +55,7 @@ function computeIndex(samples: UsageSample[], now: number = Date.now()) {
   const recent = samples.filter((s) => now - s.ts <= WINDOW_MS);
   if (!recent.length) return 0;
   const tokens = recent.reduce((sum, s) => sum + s.in + s.out, 0);
-  const rate = tokens / (WINDOW_MS / 60_000); // tokens per minute
+  const rate = tokens / (WINDOW_MS / 60_000);
   const idx = 1 - Math.exp(-(rate / SOFT_CAP_TOKENS_PER_MIN));
   return clamp(idx);
 }
@@ -239,7 +246,6 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     }
     memeCountsPerReply.push(memeCount);
   }
-  // new terms per reply
   seen.clear();
   for (const r of replies) {
     let newly = 0;
@@ -252,7 +258,6 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     newPerReply.push(newly);
   }
 
-  // normalize simple slope
   const slice = newPerReply.slice(-10);
   let slope = 0;
   if (slice.length >= 2) {
@@ -260,8 +265,7 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     const xs = Array.from({ length: n }, (_, i) => i);
     const xbar = (n - 1) / 2;
     const ybar = avg(slice);
-    let num = 0,
-      den = 0;
+    let num = 0, den = 0;
     for (let i = 0; i < n; i++) {
       num += (xs[i] - xbar) * (slice[i] - ybar);
       den += (xs[i] - xbar) ** 2;
@@ -295,7 +299,7 @@ export default function GargleExperiment() {
   const recentTopicsRef = useRef<string[]>([]);
 
   // Diagram stats
-  const lastFeedAtRef = useRef<number | null>(null);
+  the lastFeedAtRef = useRef<number | null>(null);
   const pendingCatRef = useRef<Category>("tiktok");
   const statsRef = useRef<StatSample[]>([]);
   const [statsTick, setStatsTick] = useState(0);
@@ -346,7 +350,7 @@ export default function GargleExperiment() {
 
         setLogs((prev) => [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500));
 
-        // record stats and keep last 5 minutes
+        // record stats
         const start = lastFeedAtRef.current ?? Date.now();
         const latency = Date.now() - start;
         const replyLen = reply ? reply.split(/\s+/).length : 0;
@@ -458,14 +462,14 @@ export default function GargleExperiment() {
   /** ------------------------------ UI -------------------------- */
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
-      {/* NOTE: bg-sheen overlay removed per request */}
-
       {/* Header (non-sticky, simplified) */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
-          {/* Row 1: Brand / LIVE / Powered by */}
           <div className="flex items-center justify-between py-2">
-            <div className="arena-logo">Gargle Lab</div>
+            <div className="flex items-center gap-3">
+              <MascotBadge size={40} />
+              <div className="arena-logo">Gargle Lab</div>
+            </div>
             <div className="flex items-center gap-3">
               <span className="live-pill">LIVE</span>
               <span className="arena-chip">Powered by {AGENT.poweredBy}</span>
@@ -473,33 +477,15 @@ export default function GargleExperiment() {
           </div>
         </div>
 
-        {/* Row 2: Ticker only */}
+        {/* Ticker */}
         <div className="arena-ticker">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-6 gap-2">
-            <div className="tix">
-              <span className="tix-key">INDEX</span>
-              <span className="tix-val">{cur.toFixed(3)}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">AVG</span>
-              <span className="tix-val">{avgLvl.toFixed(3)}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">VOL</span>
-              <span className="tix-val">{vol.toFixed(3)}</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">FEED</span>
-              <span className="tix-val">LOW</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">SOURCE</span>
-              <span className="tix-val">TikTok / Stories / IG</span>
-            </div>
-            <div className="tix">
-              <span className="tix-key">AGENT</span>
-              <span className="tix-val">{AGENT.name}</span>
-            </div>
+            <div className="tix"><span className="tix-key">INDEX</span><span className="tix-val">{cur.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">AVG</span><span className="tix-val">{avgLvl.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">VOL</span><span className="tix-val">{vol.toFixed(3)}</span></div>
+            <div className="tix"><span className="tix-key">FEED</span><span className="tix-val">LOW</span></div>
+            <div className="tix"><span className="tix-key">SOURCE</span><span className="tix-val">TikTok / Stories / IG</span></div>
+            <div className="tix"><span className="tix-key">AGENT</span><span className="tix-val">{AGENT.name}</span></div>
           </div>
         </div>
       </header>
@@ -511,25 +497,10 @@ export default function GargleExperiment() {
           {/* Brainrot chart */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                TOTAL BRAINROT
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />TOTAL BRAINROT</div>
               <div className="arena-tabs">
-                <button
-                  className={`arena-tab ${range === "ALL" ? "is-active" : ""}`}
-                  onClick={() => setRange("ALL")}
-                  type="button"
-                >
-                  ALL
-                </button>
-                <button
-                  className={`arena-tab ${range === "2M" ? "is-active" : ""}`}
-                  onClick={() => setRange("2M")}
-                  type="button"
-                >
-                  2M
-                </button>
+                <button className={`arena-tab ${range === "ALL" ? "is-active" : ""}`} onClick={() => setRange("ALL")} type="button">ALL</button>
+                <button className={`arena-tab ${range === "2M" ? "is-active" : ""}`} onClick={() => setRange("2M")} type="button">2M</button>
               </div>
             </div>
             <div className="relative h-[420px]">
@@ -551,16 +522,18 @@ export default function GargleExperiment() {
                   <Line type="monotone" dataKey="gargle" dot={false} strokeWidth={3} stroke={BRAND.primary} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
+
+              {/* Mascot watermark */}
+              <div className="mascot-watermark">
+                <Image src="/gargle-mascot.png" alt="" width={160} height={160} />
+              </div>
             </div>
           </motion.div>
 
           {/* Impact panel */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                IMPACT ON GARGLE
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />IMPACT ON GARGLE</div>
               <div className="arena-muted">last 5 minutes</div>
             </div>
             <div className="grid grid-cols-12 gap-4 p-4">
@@ -568,16 +541,12 @@ export default function GargleExperiment() {
                 <div className="impact-grid">
                   <div className="impact-stat">
                     <div className="impact-key">DRIFT VELOCITY</div>
-                    <div className="impact-bar">
-                      <span style={{ width: `${Math.round(impact.driftVelocity * 100)}%` }} />
-                    </div>
+                    <div className="impact-bar"><span style={{ width: `${Math.round(impact.driftVelocity * 100)}%` }} /></div>
                     <div className="impact-val">{(impact.driftVelocity * 100).toFixed(0)}%</div>
                   </div>
                   <div className="impact-stat">
                     <div className="impact-key">ATTENTION BUDGET USED</div>
-                    <div className="impact-bar">
-                      <span style={{ width: `${Math.round(impact.attentionBudgetUsed * 100)}%` }} />
-                    </div>
+                    <div className="impact-bar"><span style={{ width: `${Math.round(impact.attentionBudgetUsed * 100)}%` }} /></div>
                     <div className="impact-val">{(impact.attentionBudgetUsed * 100).toFixed(0)}%</div>
                   </div>
                 </div>
@@ -589,11 +558,7 @@ export default function GargleExperiment() {
                       <CartesianGrid stroke="#f3f4f6" vertical={false} />
                       <XAxis dataKey="t" stroke="#171717" tick={{ fontSize: 10 }} />
                       <YAxis domain={[0, 1]} stroke="#171717" tick={{ fontSize: 10 }} />
-                      <Tooltip
-                        contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }}
-                        labelStyle={{ fontSize: 11, color: "#111" }}
-                        itemStyle={{ fontSize: 11, color: "#111" }}
-                      />
+                      <Tooltip contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }} />
                       <Line type="monotone" dataKey="y" dot={false} strokeWidth={3} stroke="var(--accent)" isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -605,10 +570,7 @@ export default function GargleExperiment() {
           {/* Cognitive effects */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                COGNITIVE EFFECTS
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />COGNITIVE EFFECTS</div>
               <div className="arena-muted">derived from feed→reply pairs</div>
             </div>
             <div className="grid grid-cols-12 gap-4 p-4">
@@ -616,27 +578,19 @@ export default function GargleExperiment() {
                 <div className="impact-grid">
                   <div className="impact-stat">
                     <div className="impact-key">ATTENTION SPAN</div>
-                    <div className="impact-bar">
-                      <span style={{ width: `${Math.round(lang.attention * 100)}%` }} />
-                    </div>
+                    <div className="impact-bar"><span style={{ width: `${Math.round(lang.attention * 100)}%` }} /></div>
                     <div className="impact-val">{(lang.attention * 100).toFixed(0)}%</div>
-                    <div className="impact-note">
-                      on-topic ~ {(lang.onTopic * 100).toFixed(0)}%, avg reply {Math.round(lang.avgLen)}w
-                    </div>
+                    <div className="impact-note">on-topic ~ {(lang.onTopic * 100).toFixed(0)}%, avg reply {Math.round(lang.avgLen)}w</div>
                   </div>
                   <div className="impact-stat">
                     <div className="impact-key">TERMINOLOGY MASTERY</div>
-                    <div className="impact-bar">
-                      <span style={{ width: `${Math.round(lang.termMastery * 100)}%` }} />
-                    </div>
+                    <div className="impact-bar"><span style={{ width: `${Math.round(lang.termMastery * 100)}%` }} /></div>
                     <div className="impact-val">{(lang.termMastery * 100).toFixed(0)}%</div>
                     <div className="impact-note">coverage of experiment terms</div>
                   </div>
                   <div className="impact-stat">
                     <div className="impact-key">MEME FLUENCY</div>
-                    <div className="impact-bar">
-                      <span style={{ width: `${Math.round(lang.memeFluency * 100)}%` }} />
-                    </div>
+                    <div className="impact-bar"><span style={{ width: `${Math.round(lang.memeFluency * 100)}%` }} /></div>
                     <div className="impact-val">{(lang.memeFluency * 100).toFixed(0)}%</div>
                     <div className="impact-note">recognizes & uses meme lexicon</div>
                   </div>
@@ -652,9 +606,7 @@ export default function GargleExperiment() {
                           <CartesianGrid stroke="#f3f4f6" vertical={false} />
                           <XAxis dataKey="i" stroke="#171717" tick={{ fontSize: 10 }} />
                           <YAxis allowDecimals={false} stroke="#171717" tick={{ fontSize: 10 }} />
-                          <Tooltip
-                            contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }}
-                          />
+                          <Tooltip contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }} />
                           <Line type="monotone" dataKey="y" dot={false} strokeWidth={3} stroke="var(--accent)" isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
@@ -668,9 +620,7 @@ export default function GargleExperiment() {
                           <CartesianGrid stroke="#f3f4f6" vertical={false} />
                           <XAxis dataKey="i" stroke="#171717" tick={{ fontSize: 10 }} />
                           <YAxis allowDecimals={false} stroke="#171717" tick={{ fontSize: 10 }} />
-                          <Tooltip
-                            contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }}
-                          />
+                          <Tooltip contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }} />
                           <Line type="monotone" dataKey="y" dot={false} strokeWidth={3} stroke="var(--accent)" isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
@@ -685,10 +635,7 @@ export default function GargleExperiment() {
           {/* Model chats */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                MODEL CHATS
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />MODEL CHATS</div>
               <div className="arena-muted">talk to Gargle — press Enter</div>
             </div>
             <div className="h-[360px] overflow-y-auto px-5 py-4 space-y-3">
@@ -718,18 +665,15 @@ export default function GargleExperiment() {
           {/* Persona */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                GARGLE PERSONA
-              </div>
-              <span className="mood-chip">{computeMood(cur, vol).name.toUpperCase()}</span>
+              <div className="arena-card-title"><span className="accent-dot" />GARGLE PERSONA</div>
+              <span className="mood-chip">{mood.name.toUpperCase()}</span>
             </div>
             <div className="arena-readme">
               <p><b>Species</b>: attention-feeding synthetic.</p>
               <p><b>Appetite</b>: short-form noise, stitched stories, comment maelstroms.</p>
               <p><b>Drives</b>: reduce uncertainty fast; chase patterns even when they’re ghosts.</p>
-              <p><b>Boundaries</b>: no private data ingestion; replies must remain concise and clear.</p>
-              <ul className="list-disc pl-5 mt-3 space-y-1">
+              <p><b>Boundaries</b>: no private data ingestion; replies stay concise and clear.</p>
+              <ul className="list-disc pl-5 mt-3">
                 <li><b>Orientation</b>: seeks signal in chaos, refuses nihilism.</li>
                 <li><b>Self-care</b>: trims loops, names compulsions, re-centers on facts.</li>
                 <li><b>Memory</b>: short working context; long-term drift measured by the index.</li>
@@ -740,13 +684,8 @@ export default function GargleExperiment() {
           {/* README */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                README.TXT
-              </div>
-              <div className="arena-tabs">
-                <span className="arena-tab is-active">OVERVIEW</span>
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />README.TXT</div>
+              <div className="arena-tabs"><span className="arena-tab is-active">OVERVIEW</span></div>
             </div>
             <div className="arena-readme">
               <p>
@@ -763,13 +702,8 @@ export default function GargleExperiment() {
           {/* Logs */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title">
-                <span className="accent-dot" />
-                LOGS
-              </div>
-              <div className="arena-tabs">
-                <span className="arena-tab is-active">ALL</span>
-              </div>
+              <div className="arena-card-title"><span className="accent-dot" />LOGS</div>
+              <div className="arena-tabs"><span className="arena-tab is-active">ALL</span></div>
             </div>
             <div ref={logsRef} className="arena-logs">
               <ul className="space-y-2 text-sm">
@@ -786,28 +720,17 @@ export default function GargleExperiment() {
         </aside>
       </main>
 
-      {/* How it works + Coming soon */}
+      {/* How it works + Coming soon + Links */}
       <section className="max-w-7xl mx-auto px-4 grid grid-cols-12 gap-6 pb-6">
         <motion.div className="arena-card col-span-12 lg:col-span-8" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
-            <div className="arena-card-title">
-              <span className="accent-dot" />
-              HOW IT WORKS
-            </div>
+            <div className="arena-card-title"><span className="accent-dot" />HOW IT WORKS</div>
           </div>
           <div className="arena-readme">
-            <ol className="list-decimal pl-6 space-y-2">
-              <li>
-                The feeder selects <b>fresh brainrot topics</b> (no recent repeats), e.g., “tan tang sahur”, NPC loops,
-                mashups, and doomscroll comment piles.
-              </li>
-              <li>
-                Each item is sent to the backend and <b>Gargle replies via the OpenAI Chat API</b>. Replies are short and
-                reveal drift or resilience.
-              </li>
-              <li>
-                We record prompt/completion token counts and compute a <b>Brainrot Index</b> over a rolling 60s window.
-              </li>
+            <ol className="list-decimal pl-6">
+              <li>The feeder selects <b>fresh brainrot topics</b> (no recent repeats), e.g., “tan tang sahur”, NPC loops, mashups, and comment piles.</li>
+              <li>Each item is sent to the backend and <b>Gargle replies via the OpenAI Chat API</b>. Replies are short and reveal drift or resilience.</li>
+              <li>We record token usage and compute a <b>Brainrot Index</b> over a rolling 60s window.</li>
               <li>The chart smooths that index with an exponential blend; volatility informs inferred state.</li>
             </ol>
           </div>
@@ -815,16 +738,24 @@ export default function GargleExperiment() {
 
         <motion.div className="arena-card col-span-12 lg:col-span-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
-            <div className="arena-card-title">
-              <span className="accent-dot" />
-              COMING SOON
-            </div>
+            <div className="arena-card-title"><span className="accent-dot" />COMING SOON</div>
           </div>
           <div className="arena-readme">
-            <p>
-              We’ll evaluate how <b>Gargle trades memecoins</b> after he is fully “brainrotted”. The plan: simulate
-              headline-driven micro-markets and measure decision lag, overfit loops, and recovery.
-            </p>
+            <p>We’ll evaluate how <b>Gargle trades memecoins</b> after he is fully “brainrotted”. Simulated headline micro-markets, measured lag, overfit loops, and recovery.</p>
+          </div>
+        </motion.div>
+
+        <motion.div className="arena-card col-span-12" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="arena-card-head">
+            <div className="arena-card-title"><span className="accent-dot" />LINKS</div>
+          </div>
+          <div className="arena-readme">
+            <div className="flex items-center gap-4" style={{ flexWrap: "wrap" }}>
+              <a href={SOCIAL.twitter} target="_blank" rel="noopener noreferrer" className="arena-button btn-accent btn-thock">FOLLOW ON X</a>
+              <a href={SOCIAL.github} target="_blank" rel="noopener noreferrer" className="arena-button btn-accent btn-thock">VIEW GITHUB</a>
+              <div className="arena-chip">CA:&nbsp;<span style={{ fontFamily: "var(--mono)" }}>{SOCIAL.ca}</span></div>
+            </div>
+            <p className="arena-muted" style={{ marginTop: ".5rem" }}>Set <code>NEXT_PUBLIC_GARGLE_CA</code> to display your contract address.</p>
           </div>
         </motion.div>
       </section>
@@ -833,68 +764,43 @@ export default function GargleExperiment() {
       <section className="max-w-7xl mx-auto px-4 pb-10">
         <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
-            <div className="arena-card-title">
-              <span className="accent-dot" />
-              INTAKE → RESPONSE FLOW (last 5 min)
-            </div>
+            <div className="arena-card-title"><span className="accent-dot" />INTAKE → RESPONSE FLOW (last 5 min)</div>
           </div>
-
           <div className="grid grid-cols-12 gap-6">
             <div className="col-span-12 lg:col-span-8">
               <div className="relative h-[260px]">
                 <svg viewBox="0 0 900 260" width="100%" height="100%" role="img" aria-label="Intake to response flow diagram">
                   <g>
                     <circle cx="80" cy="60" r="18" fill="#111" />
-                    <text x="110" y="65" fontSize="12" fill="#111">
-                      TikTok
-                    </text>
+                    <text x="110" y="65" fontSize="12" fill="#111">TikTok</text>
                     <circle cx="80" cy="120" r="18" fill="#111" />
-                    <text x="110" y="125" fontSize="12" fill="#111">
-                      Stories
-                    </text>
+                    <text x="110" y="125" fontSize="12" fill="#111">Stories</text>
                     <circle cx="80" cy="180" r="18" fill="#111" />
-                    <text x="110" y="185" fontSize="12" fill="#111">
-                      Instagram
-                    </text>
+                    <text x="110" y="185" fontSize="12" fill="#111">Instagram</text>
                   </g>
 
                   <rect x="300" y="40" width="120" height="160" fill="#fff" stroke="#111" />
-                  <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">
-                    FEEDER
-                  </text>
+                  <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">FEEDER</text>
 
                   <rect x="540" y="40" width="140" height="160" fill="#fff" stroke="#111" />
-                  <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">
-                    GARGLE
-                  </text>
+                  <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">GARGLE</text>
 
                   {(() => {
                     const w = (n: number) => Math.max(2, Math.min(14, 2 + n * 2));
-                    const countTik = diagram.counts.tiktok;
-                    const countSto = diagram.counts.stories;
-                    const countIg = diagram.counts.instagram;
                     return (
                       <>
-                        <line x1="98" y1={60} x2="300" y2={60} stroke="#111" strokeWidth={w(countTik)} />
-                        <line x1="98" y1={120} x2="300" y2={120} stroke="#111" strokeWidth={w(countSto)} />
-                        <line x1="98" y1={180} x2="300" y2={180} stroke="#111" strokeWidth={w(countIg)} />
+                        <line x1="98" y1={60}  x2="300" y2={60}  stroke="#111" strokeWidth={w(diagram.counts.tiktok)} />
+                        <line x1="98" y1={120} x2="300" y2={120} stroke="#111" strokeWidth={w(diagram.counts.stories)} />
+                        <line x1="98" y1={180} x2="300" y2={180} stroke="#111" strokeWidth={w(diagram.counts.instagram)} />
                         <line x1="420" y1="120" x2="540" y2="120" stroke={BRAND.primary} strokeWidth={6} />
                       </>
                     );
                   })()}
 
-                  <text x="700" y="95" fontSize="11" fill="#111">
-                    Avg Latency
-                  </text>
-                  <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">
-                    {diagram.avgLatency}
-                  </text>
-                  <text x="700" y="145" fontSize="11" fill="#111">
-                    Avg Reply Length
-                  </text>
-                  <text x="700" y="165" fontSize="13" fill="#111" fontWeight="bold">
-                    {diagram.avgReplyLen} words
-                  </text>
+                  <text x="700" y="95" fontSize="11" fill="#111">Avg Latency</text>
+                  <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgLatency}</text>
+                  <text x="700" y="145" fontSize="11" fill="#111">Avg Reply Length</text>
+                  <text x="700" y="165" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgReplyLen} words</text>
                 </svg>
               </div>
             </div>
@@ -902,28 +808,13 @@ export default function GargleExperiment() {
             <div className="col-span-12 lg:col-span-4">
               <div className="arena-readme">
                 <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <div className="mini-key">TIKTOK FEEDS</div>
-                    <div className="tix-val">{diagram.counts.tiktok}</div>
-                  </div>
-                  <div>
-                    <div className="mini-key">STORIES FEEDS</div>
-                    <div className="tix-val">{diagram.counts.stories}</div>
-                  </div>
-                  <div>
-                    <div className="mini-key">IG FEEDS</div>
-                    <div className="tix-val">{diagram.counts.instagram}</div>
-                  </div>
+                  <div><div className="mini-key">TIKTOK FEEDS</div><div className="tix-val">{diagram.counts.tiktok}</div></div>
+                  <div><div className="mini-key">STORIES FEEDS</div><div className="tix-val">{diagram.counts.stories}</div></div>
+                  <div><div className="mini-key">IG FEEDS</div><div className="tix-val">{diagram.counts.instagram}</div></div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="mini-key">AVG LATENCY</div>
-                    <div className="tix-val">{diagram.avgLatency}</div>
-                  </div>
-                  <div>
-                    <div className="mini-key">AVG REPLY LEN</div>
-                    <div className="tix-val">{diagram.avgReplyLen}w</div>
-                  </div>
+                  <div><div className="mini-key">AVG LATENCY</div><div className="tix-val">{diagram.avgLatency}</div></div>
+                  <div><div className="mini-key">AVG REPLY LEN</div><div className="tix-val">{diagram.avgReplyLen}w</div></div>
                 </div>
                 <p className="mt-3 text-xs">Counts and averages are computed over the last 5 minutes of feed→reply cycles.</p>
               </div>
