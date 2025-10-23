@@ -32,25 +32,23 @@ const AGENT = {
   backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini",
 };
 
-// ⬇️ Edit this string in-place when you have your contract address.
-const CA_HARDCODED = "";
+// Edit this when you have your contract address:
+const CA_HARDCODED = "TBA";
 
 const SOCIAL = {
   twitter: "https://x.com/garglellm?s=21",
   github: "https://github.com/llm-brain-rot/llm-brain-rot?tab=readme-ov-file#-model",
 };
 
-const BRAND = { primary: "#2563eb" }; // chart blue
+const BRAND = { primary: "#2563eb" };
 const FEED_INTERVAL_MS = 3000; // LOW cadence
-const REACTION_DELAY_MS = 800;
+const REACTION_DELAY_MS = 820;
 const WINDOW_MS = 60_000;
 const SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
 
 /** ---------------------------- Helpers -------------------------- */
-function clamp(v: number, lo = 0, hi = 1) {
-  return Math.max(lo, Math.min(hi, v));
-}
+function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
 function computeIndex(samples: UsageSample[], now: number = Date.now()) {
   const recent = samples.filter((s) => now - s.ts <= WINDOW_MS);
   if (!recent.length) return 0;
@@ -110,15 +108,19 @@ async function callLLM(
 }
 
 /** ---------------------- Feeder content ------------------------ */
+// Heavier weighting up top for requested topics.
 const BRAINTROTS = [
+  "skibidi toilet episode recap with ohio-core filter",
+  "skibi chant layered over subway surfers run",
+  "Italian brainrot montage: sped-up hand gestures + dramatic captions",
+  "skibidi vs sigma rizz mashup reel",
+  "tan tang sahur chant clip",
   "NPC live loop: ice cream so good remix",
   "day-in-the-life sigma grindset cut",
   "ohio-core fan edit v3",
-  "skibidi rizz lore thread",
   "capcut fan-cam slowmo",
   "sped-up audio mashup pack",
   "subway surfers split-screen backdrop",
-  "tan tang sahur chant clip",
   "story chain: out-of-context ‘breaking’ reel",
   "carousel slides: pseudo-explainer conspiracy",
   "comment pile-on under gym reel",
@@ -128,6 +130,7 @@ const BRAINTROTS = [
   "doomscrolling instagram explore comments",
   "reposted story with red circles",
 ];
+
 function nextBrainrotTopic(rng: () => number, recent: string[]) {
   for (let i = 0; i < 12; i++) {
     const cand = BRAINTROTS[Math.floor(rng() * BRAINTROTS.length)];
@@ -137,7 +140,7 @@ function nextBrainrotTopic(rng: () => number, recent: string[]) {
 }
 function topicCategory(topic: string): Category {
   const t = topic.toLowerCase();
-  if (t.includes("tiktok") || t.includes("npc") || t.includes("skibidi") || t.includes("sigma") || t.includes("capcut") || t.includes("subway"))
+  if (t.includes("tiktok") || t.includes("npc") || t.includes("skibidi") || t.includes("skibi") || t.includes("sigma") || t.includes("capcut") || t.includes("subway"))
     return "tiktok";
   if (t.includes("story") || t.includes("stories") || t.includes("carousel")) return "stories";
   return "instagram";
@@ -185,16 +188,20 @@ const STOP = new Set([
 function tokensOf(s: string) {
   return (s.toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => !STOP.has(w));
 }
-function keywordSet(s: string) {
-  return new Set(tokensOf(s));
-}
+function keywordSet(s: string) { return new Set(tokensOf(s)); }
+
 const TERMINOLOGY = [
   "latency","coherence","volatility","tokens","index","window","rolling","smooth","prompt","completion",
   "attention","budget","slope","trend","distribution","baseline","cap","normalize","drift","arousal","fatigue",
 ];
+
+// Expanded with requested meme lexicon.
 const MEME_TERMS = [
-  "npc","sigma","rizz","ohio","skibidi","capcut","fan","edit","slowmo","subway","surfers","gyatt","alpha","beta","ratio","cringe","based","mid","glaze",
+  "skibi","skibidi","toilet","italian","brainrot",
+  "npc","sigma","rizz","ohio","capcut","fan","edit","slowmo","subway","surfers",
+  "gyatt","alpha","beta","ratio","cringe","based","mid","glaze",
 ];
+
 function buildPairs(logs: LogLine[]) {
   const pairs: Array<{ feed: string; reply: string }> = [];
   let pending: string | null = null;
@@ -209,8 +216,7 @@ function buildPairs(logs: LogLine[]) {
 }
 function attentionSpanScore(pairs: Array<{ feed: string; reply: string }>) {
   if (!pairs.length) return { score: 0, avgOnTopic: 0, avgLen: 0 };
-  let overlapSum = 0;
-  let lenSum = 0;
+  let overlapSum = 0, lenSum = 0;
   for (const { feed, reply } of pairs) {
     const fk = keywordSet(feed);
     const rk = tokensOf(reply);
@@ -236,13 +242,7 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     let memeCount = 0;
     for (const t of r) {
       if (TERMINOLOGY.includes(t)) uniqueTerms.add(t);
-      if (MEME_TERMS.includes(t)) {
-        uniqueMemes.add(t);
-        memeCount++;
-        if (!seen.has(t)) {
-          seen.add(t);
-        }
-      }
+      if (MEME_TERMS.includes(t)) { uniqueMemes.add(t); memeCount++; if (!seen.has(t)) { seen.add(t); } }
     }
     memeCountsPerReply.push(memeCount);
   }
@@ -250,10 +250,7 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
   for (const r of replies) {
     let newly = 0;
     for (const t of r) {
-      if (MEME_TERMS.includes(t) && !seen.has(t)) {
-        seen.add(t);
-        newly++;
-      }
+      if (MEME_TERMS.includes(t) && !seen.has(t)) { seen.add(t); newly++; }
     }
     newPerReply.push(newly);
   }
@@ -261,15 +258,10 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
   const slice = newPerReply.slice(-10);
   let slope = 0;
   if (slice.length >= 2) {
-    const n = slice.length;
-    const xs = Array.from({ length: n }, (_, i) => i);
-    const xbar = (n - 1) / 2;
-    const ybar = avg(slice);
+    const n = slice.length, xs = Array.from({ length: n }, (_, i) => i);
+    const xbar = (n - 1) / 2, ybar = avg(slice);
     let num = 0, den = 0;
-    for (let i = 0; i < n; i++) {
-      num += (xs[i] - xbar) * (slice[i] - ybar);
-      den += (xs[i] - xbar) ** 2;
-    }
+    for (let i = 0; i < n; i++) { num += (xs[i] - xbar) * (slice[i] - ybar); den += (xs[i] - xbar) ** 2; }
     slope = den ? num / den : 0;
   }
   const learningTrend = clamp((slope + 1) / 2);
@@ -304,13 +296,8 @@ export default function GargleExperiment() {
   const statsRef = useRef<StatSample[]>([]);
   const [statsTick, setStatsTick] = useState(0);
 
-  useEffect(() => {
-    levelRef.current = level.gargle;
-  }, [level.gargle]);
-
-  useEffect(() => {
-    logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" });
-  }, [logs]);
+  useEffect(() => { levelRef.current = level.gargle; }, [level.gargle]);
+  useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [logs]);
 
   /** ----------------------- Feeder (LOW only) ------------------ */
   useEffect(() => {
@@ -329,7 +316,7 @@ export default function GargleExperiment() {
 
       setLogs((prev) => [...prev, { who: "feed" as const, text: `Feed → ${topic}`, ts: now }].slice(-500));
 
-      // Gargle reply
+      // Gargle reply (brainrot style)
       setTimeout(async () => {
         const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => {
           const role: "user" | "assistant" = l.who === "feed" ? "user" : "assistant";
@@ -337,20 +324,21 @@ export default function GargleExperiment() {
         });
 
         const system =
-          "You are Gargle being fed noisy social media 'brainrot'. Respond in 1–2 concise sentences that reveal drift or coping strategies. Avoid emojis.";
-        const out = await callLLM(system, topic, historyFromLogs);
-        const reply = out?.text?.trim() || "(no response)";
+          "You are Gargle, a live experiment powered by Claude. You’re being fed short-form ‘brainrot’ (skibidi toilet, Italian brainrot, sigma edits, etc). " +
+          "Reply in 1–2 compact sentences, mostly lucid but with slight meme drift. You may occasionally interject ‘skibi’ or ‘skibidi toilet’ phrasing when it fits. " +
+          "Stay readable, no emojis.";
 
+        const out = await callLLM(system, topic, historyFromLogs);
+        const reply = out?.text?.trim() || "skibi… processing.";
         const inTok = out?.usage?.prompt_tokens ?? 0;
         const outTok =
           out?.usage?.completion_tokens ??
           (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
 
         usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
-
         setLogs((prev) => [...prev, { who: "gargle" as const, text: reply, ts: Date.now() }].slice(-500));
 
-        // record stats
+        // stats + index
         const start = lastFeedAtRef.current ?? Date.now();
         const latency = Date.now() - start;
         const replyLen = reply ? reply.split(/\s+/).length : 0;
@@ -359,7 +347,6 @@ export default function GargleExperiment() {
         statsRef.current = statsRef.current.filter((s) => s.ts >= cutoff);
         setStatsTick((n) => n + 1);
 
-        // update index + chart
         const idx = computeIndex(usageRef.current, Date.now());
         const smooth = clamp(levelRef.current * (1 - ALPHA) + idx * ALPHA);
         setLevel({ gargle: smooth });
@@ -385,14 +372,17 @@ export default function GargleExperiment() {
 
     setChat((prev) => [...prev, { from: "user" as const, text, ts }]);
 
-    const system = "You are Gargle. Keep answers compact and lucid. Avoid emojis.";
+    const system =
+      "You are Gargle (Claude-backed). Keep answers compact, readable, and lightly brainrot-fluent. " +
+      "Mirror the user’s slang; occasional ‘skibi’ is acceptable. No emojis.";
+
     const history = chat.map((m): { role: "user" | "assistant"; content: string } => {
       const role: "user" | "assistant" = m.from === "user" ? "user" : "assistant";
       return { role, content: m.text };
     });
 
     const out = await callLLM(system, text, history);
-    const reply = out?.text?.trim() || "(no response)";
+    const reply = out?.text?.trim() || "skibi noted.";
     const inTok = out?.usage?.prompt_tokens ?? 0;
     const outTok =
       out?.usage?.completion_tokens ??
@@ -422,7 +412,6 @@ export default function GargleExperiment() {
     return d / (w.length - 1);
   }, [series]);
   const displaySeries = useMemo(() => (range === "ALL" ? series : series.slice(-120)), [series, range]);
-  const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
 
   const mood = computeMood(cur, vol);
   const impact = useMemo(() => computeImpact(series, usageRef.current), [series]);
@@ -431,33 +420,10 @@ export default function GargleExperiment() {
     const pairs = buildPairs(logs);
     const att = attentionSpanScore(pairs);
     const { termMastery, memeFluency, memeSpark, learnSpark, learningTrend } = termAndMemeMetrics(pairs);
-    return {
-      attention: att.score,
-      onTopic: att.avgOnTopic,
-      avgLen: att.avgLen,
-      termMastery,
-      memeFluency,
-      memeSpark,
-      learnSpark,
-      learningTrend,
-    };
+    return { attention: att.score, onTopic: att.avgOnTopic, avgLen: att.avgLen, termMastery, memeFluency, memeSpark, learnSpark, learningTrend };
   }, [logs]);
 
-  // Diagram aggregates (last 5 minutes)
-  const diagram = useMemo(() => {
-    const cutoff = Date.now() - 5 * 60_000;
-    const recent = statsRef.current.filter((s) => s.ts >= cutoff);
-    const byCat: Record<Category, StatSample[]> = { tiktok: [], stories: [], instagram: [] };
-    recent.forEach((s) => byCat[s.category].push(s));
-    const counts: Record<Category, number> = {
-      tiktok: byCat.tiktok.length,
-      stories: byCat.stories.length,
-      instagram: byCat.instagram.length,
-    };
-    const avgLatency = msFmt(avg(recent.map((s) => s.latencyMs)));
-    const avgReplyLen = Math.round(avg(recent.map((s) => s.replyLen)));
-    return { counts, avgLatency, avgReplyLen };
-  }, [statsTick]);
+  const lastVal = displaySeries.length ? displaySeries[displaySeries.length - 1].gargle : 0;
 
   /** ------------------------------ UI -------------------------- */
   return (
@@ -466,9 +432,7 @@ export default function GargleExperiment() {
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-3">
-              <div className="arena-logo">Gargle Lab</div>
-            </div>
+            <div className="arena-logo">Gargle Lab</div>
             <div className="flex items-center gap-3">
               <span className="live-pill">LIVE</span>
               <span className="arena-chip">CA: <span style={{ fontFamily: "var(--mono)" }}>{CA_HARDCODED}</span></span>
@@ -476,8 +440,6 @@ export default function GargleExperiment() {
             </div>
           </div>
         </div>
-
-        {/* Ticker */}
         <div className="arena-ticker">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-6 gap-2">
             <div className="tix"><span className="tix-key">INDEX</span><span className="tix-val">{cur.toFixed(3)}</span></div>
@@ -492,7 +454,7 @@ export default function GargleExperiment() {
 
       {/* Main */}
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-12 gap-6">
-        {/* Left column */}
+        {/* Left */}
         <section className="col-span-12 lg:col-span-8 space-y-6">
           {/* Brainrot chart */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -509,18 +471,14 @@ export default function GargleExperiment() {
                   <CartesianGrid stroke="#e5e7eb" vertical={false} />
                   <XAxis dataKey="t" stroke="#171717" tick={{ fontSize: 11 }} />
                   <YAxis domain={[0, 1]} stroke="#171717" tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }}
-                    labelStyle={{ fontSize: 11, color: "#111" }}
-                    itemStyle={{ fontSize: 11, color: "#111" }}
-                  />
+                  <Tooltip contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }} />
                   <Line type="monotone" dataKey="gargle" dot={false} strokeWidth={3} stroke={BRAND.primary} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </motion.div>
 
-          {/* Impact panel */}
+          {/* Impact */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />IMPACT ON GARGLE</div>
@@ -650,7 +608,7 @@ export default function GargleExperiment() {
           </motion.div>
         </section>
 
-        {/* Right column */}
+        {/* Right */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
           {/* Persona */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -660,18 +618,13 @@ export default function GargleExperiment() {
             </div>
             <div className="arena-readme">
               <p><b>Species</b>: attention-feeding synthetic.</p>
-              <p><b>Appetite</b>: short-form noise, stitched stories, comment maelstroms.</p>
+              <p><b>Appetite</b>: skibidi/Italian brainrot, NPC loops, stitched stories, comment maelstroms.</p>
               <p><b>Drives</b>: reduce uncertainty fast; chase patterns even when they’re ghosts.</p>
               <p><b>Boundaries</b>: no private data ingestion; replies stay concise and clear.</p>
-              <ul className="list-disc pl-5 mt-3">
-                <li><b>Orientation</b>: seeks signal in chaos, refuses nihilism.</li>
-                <li><b>Self-care</b>: trims loops, names compulsions, re-centers on facts.</li>
-                <li><b>Memory</b>: short working context; long-term drift measured by the index.</li>
-              </ul>
             </div>
           </motion.div>
 
-          {/* README */}
+          {/* README (Claude mention kept) */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
               <div className="arena-card-title"><span className="accent-dot" />README.TXT</div>
@@ -680,11 +633,13 @@ export default function GargleExperiment() {
             <div className="arena-readme">
               <p>
                 <b>Gargle</b> is an experiment. We feed a single model a steady drip of social “brainrot”
-                (TikTok clips, story chains, and Instagram doomscroll). We track a <b>Brainrot Index</b> from
-                tokens-per-minute over a rolling 60s window, and infer state from level and short-term volatility.
+                (skibidi toilet, Italian brainrot, NPC loops, TikTok reels, stories, IG doomscroll).
+                We track a <b>Brainrot Index</b> from tokens-per-minute over a rolling 60s window,
+                and infer state from level and short-term volatility.
               </p>
               <p>
                 “MODEL CHATS” is for you to talk to Gargle directly. The <b>LOGS</b> panel shows how Gargle reacts to the feed.
+                Backend replies use <b>Claude</b>.
               </p>
             </div>
           </motion.div>
@@ -710,7 +665,7 @@ export default function GargleExperiment() {
         </aside>
       </main>
 
-      {/* How it works + Coming soon + Links */}
+      {/* How it works + Links */}
       <section className="max-w-7xl mx-auto px-4 grid grid-cols-12 gap-6 pb-6">
         <motion.div className="arena-card col-span-12 lg:col-span-8" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
@@ -718,20 +673,11 @@ export default function GargleExperiment() {
           </div>
           <div className="arena-readme">
             <ol className="list-decimal pl-6">
-              <li>The feeder selects <b>fresh brainrot topics</b> (no recent repeats), e.g., “tan tang sahur”, NPC loops, mashups, and comment piles.</li>
-              <li>Each item is sent to the backend and <b>Gargle replies using Claude</b>. Replies are short and reveal drift or resilience.</li>
-              <li>We record token usage and compute a <b>Brainrot Index</b> over a rolling 60s window.</li>
-              <li>The chart smooths that index with an exponential blend; volatility informs inferred state.</li>
+              <li>Feeder selects <b>fresh topics</b> (skibi, skibidi toilet, Italian brainrot, sigma edits, etc.) without immediate repeats.</li>
+              <li>Each item is sent to the backend and <b>Gargle replies using Claude</b> in a compact, brainrot-fluent style.</li>
+              <li>Token usage is recorded to compute the <b>Brainrot Index</b> (rolling 60s), smoothed for the chart.</li>
+              <li>Language metrics estimate attention span, terminology mastery, and meme fluency/learning.</li>
             </ol>
-          </div>
-        </motion.div>
-
-        <motion.div className="arena-card col-span-12 lg:col-span-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="arena-card-head">
-            <div className="arena-card-title"><span className="accent-dot" />COMING SOON</div>
-          </div>
-          <div className="arena-readme">
-            <p>We’ll evaluate how <b>Gargle trades memecoins</b> after he is fully “brainrotted”. Simulated headline micro-markets, measured lag, overfit loops, and recovery.</p>
           </div>
         </motion.div>
 
@@ -743,69 +689,7 @@ export default function GargleExperiment() {
             <div className="flex items-center gap-4" style={{ flexWrap: "wrap" }}>
               <a href={SOCIAL.twitter} target="_blank" rel="noopener noreferrer" className="arena-button btn-accent btn-thock">FOLLOW ON X</a>
               <a href={SOCIAL.github} target="_blank" rel="noopener noreferrer" className="arena-button btn-accent btn-thock">VIEW GITHUB</a>
-            </div>
-          </div>
-        </motion.div>
-      </section>
-
-      {/* Intake → Response Flow Diagram */}
-      <section className="max-w-7xl mx-auto px-4 pb-10">
-        <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="arena-card-head">
-            <div className="arena-card-title"><span className="accent-dot" />INTAKE → RESPONSE FLOW (last 5 min)</div>
-          </div>
-          <div className="grid grid-cols-12 gap-6">
-            <div className="col-span-12 lg:col-span-8">
-              <div className="relative h-[260px]">
-                <svg viewBox="0 0 900 260" width="100%" height="100%" role="img" aria-label="Intake to response flow diagram">
-                  <g>
-                    <circle cx="80" cy="60" r="18" fill="#111" />
-                    <text x="110" y="65" fontSize="12" fill="#111">TikTok</text>
-                    <circle cx="80" cy="120" r="18" fill="#111" />
-                    <text x="110" y="125" fontSize="12" fill="#111">Stories</text>
-                    <circle cx="80" cy="180" r="18" fill="#111" />
-                    <text x="110" y="185" fontSize="12" fill="#111">Instagram</text>
-                  </g>
-
-                  <rect x="300" y="40" width="120" height="160" fill="#fff" stroke="#111" />
-                  <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">FEEDER</text>
-
-                  <rect x="540" y="40" width="140" height="160" fill="#fff" stroke="#111" />
-                  <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">GARGLE</text>
-
-                  {(() => {
-                    const w = (n: number) => Math.max(2, Math.min(14, 2 + n * 2));
-                    return (
-                      <>
-                        <line x1="98" y1={60}  x2="300" y2={60}  stroke="#111" strokeWidth={w(diagram.counts.tiktok)} />
-                        <line x1="98" y1={120} x2="300" y2={120} stroke="#111" strokeWidth={w(diagram.counts.stories)} />
-                        <line x1="98" y1={180} x2="300" y2={180} stroke="#111" strokeWidth={w(diagram.counts.instagram)} />
-                        <line x1="420" y1="120" x2="540" y2="120" stroke={BRAND.primary} strokeWidth={6} />
-                      </>
-                    );
-                  })()}
-
-                  <text x="700" y="95" fontSize="11" fill="#111">Avg Latency</text>
-                  <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgLatency}</text>
-                  <text x="700" y="145" fontSize="11" fill="#111">Avg Reply Length</text>
-                  <text x="700" y="165" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgReplyLen} words</text>
-                </svg>
-              </div>
-            </div>
-
-            <div className="col-span-12 lg:col-span-4">
-              <div className="arena-readme">
-                <div className="grid grid-cols-3 gap-3">
-                  <div><div className="mini-key">TIKTOK FEEDS</div><div className="tix-val">{diagram.counts.tiktok}</div></div>
-                  <div><div className="mini-key">STORIES FEEDS</div><div className="tix-val">{diagram.counts.stories}</div></div>
-                  <div><div className="mini-key">IG FEEDS</div><div className="tix-val">{diagram.counts.instagram}</div></div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div><div className="mini-key">AVG LATENCY</div><div className="tix-val">{diagram.avgLatency}</div></div>
-                  <div><div className="mini-key">AVG REPLY LEN</div><div className="tix-val">{diagram.avgReplyLen}w</div></div>
-                </div>
-                <p className="mt-3 text-xs">Counts and averages are computed over the last 5 minutes of feed→reply cycles.</p>
-              </div>
+              <div className="arena-chip">CA:&nbsp;<span style={{ fontFamily: "var(--mono)" }}>{CA_HARDCODED}</span></div>
             </div>
           </div>
         </motion.div>
