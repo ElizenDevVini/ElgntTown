@@ -32,10 +32,12 @@ const AGENT = {
   backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini",
 };
 
+// ⬇️ Edit this string in-place when you have your contract address.
+const CA_HARDCODED = "TBA";
+
 const SOCIAL = {
   twitter: "https://x.com/garglellm?s=21",
   github: "https://github.com/llm-brain-rot/llm-brain-rot?tab=readme-ov-file#-model",
-  ca: process.env.NEXT_PUBLIC_GARGLE_CA || "TBA",
 };
 
 const BRAND = { primary: "#2563eb" }; // chart blue
@@ -263,8 +265,7 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     const xs = Array.from({ length: n }, (_, i) => i);
     const xbar = (n - 1) / 2;
     const ybar = avg(slice);
-    let num = 0,
-      den = 0;
+    let num = 0, den = 0;
     for (let i = 0; i < n; i++) {
       num += (xs[i] - xbar) * (slice[i] - ybar);
       den += (xs[i] - xbar) ** 2;
@@ -461,7 +462,7 @@ export default function GargleExperiment() {
   /** ------------------------------ UI -------------------------- */
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
-      {/* Header (no mascot, no external layout component) */}
+      {/* Header */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2">
@@ -470,6 +471,7 @@ export default function GargleExperiment() {
             </div>
             <div className="flex items-center gap-3">
               <span className="live-pill">LIVE</span>
+              <span className="arena-chip">CA: <span style={{ fontFamily: "var(--mono)" }}>{CA_HARDCODED}</span></span>
               <span className="arena-chip">Powered by {AGENT.poweredBy}</span>
             </div>
           </div>
@@ -717,7 +719,7 @@ export default function GargleExperiment() {
           <div className="arena-readme">
             <ol className="list-decimal pl-6">
               <li>The feeder selects <b>fresh brainrot topics</b> (no recent repeats), e.g., “tan tang sahur”, NPC loops, mashups, and comment piles.</li>
-              <li>Each item is sent to the backend and <b>Gargle replies via the OpenAI Chat API</b>. Replies are short and reveal drift or resilience.</li>
+              <li>Each item is sent to the backend and <b>Gargle replies using Claude</b>. Replies are short and reveal drift or resilience.</li>
               <li>We record token usage and compute a <b>Brainrot Index</b> over a rolling 60s window.</li>
               <li>The chart smooths that index with an exponential blend; volatility informs inferred state.</li>
             </ol>
@@ -741,9 +743,7 @@ export default function GargleExperiment() {
             <div className="flex items-center gap-4" style={{ flexWrap: "wrap" }}>
               <a href={SOCIAL.twitter} target="_blank" rel="noopener noreferrer" className="arena-button btn-accent btn-thock">FOLLOW ON X</a>
               <a href={SOCIAL.github} target="_blank" rel="noopener noreferrer" className="arena-button btn-accent btn-thock">VIEW GITHUB</a>
-              <div className="arena-chip">CA:&nbsp;<span style={{ fontFamily: "var(--mono)" }}>{SOCIAL.ca}</span></div>
             </div>
-            <p className="arena-muted" style={{ marginTop: ".5rem" }}>Set <code>NEXT_PUBLIC_GARGLE_CA</code> to display your contract address.</p>
           </div>
         </motion.div>
       </section>
