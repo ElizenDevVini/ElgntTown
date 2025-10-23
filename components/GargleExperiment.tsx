@@ -299,7 +299,7 @@ export default function GargleExperiment() {
   const recentTopicsRef = useRef<string[]>([]);
 
   // Diagram stats
-  the lastFeedAtRef = useRef<number | null>(null);
+  const lastFeedAtRef = useRef<number | null>(null);
   const pendingCatRef = useRef<Category>("tiktok");
   const statsRef = useRef<StatSample[]>([]);
   const [statsTick, setStatsTick] = useState(0);
