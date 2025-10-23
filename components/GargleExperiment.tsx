@@ -1,11 +1,19 @@
+// components/GargleExperiment.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
 } from "recharts";
 
+/** ---------------------------- Types ---------------------------- */
 type AgentId = "gargle";
 type ChatMessage = { from: "user" | AgentId; text: string; ts: number };
 type LogLine = { who: "feed" | AgentId; text: string; ts: number };
@@ -17,28 +25,30 @@ type RangeKey = "ALL" | "2M";
 type Category = "tiktok" | "stories" | "instagram";
 type StatSample = { ts: number; category: Category; latencyMs: number; replyLen: number };
 
+/** ---------------------------- Config --------------------------- */
 const AGENT = {
   id: "gargle" as const,
   name: "Gargle",
-  poweredBy: "Claude",
-  backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini", // your backend fanout can normalize this
+  poweredBy: "Claude", // label only
+  backendModel: process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-4o-mini",
 };
 
 const BRAND = { primary: "#2563eb" }; // chart blue
-const FEED_INTERVAL_MS = 3000;
+const FEED_INTERVAL_MS = 3000; // LOW cadence
 const REACTION_DELAY_MS = 800;
 const WINDOW_MS = 60_000;
 const SOFT_CAP_TOKENS_PER_MIN = 12_000;
 const ALPHA = 0.35;
 
-/* -------------------- helpers -------------------- */
-
-function clamp(v: number, lo = 0, hi = 1) { return Math.max(lo, Math.min(hi, v)); }
+/** ---------------------------- Helpers -------------------------- */
+function clamp(v: number, lo = 0, hi = 1) {
+  return Math.max(lo, Math.min(hi, v));
+}
 function computeIndex(samples: UsageSample[], now: number = Date.now()) {
   const recent = samples.filter((s) => now - s.ts <= WINDOW_MS);
   if (!recent.length) return 0;
   const tokens = recent.reduce((sum, s) => sum + s.in + s.out, 0);
-  const rate = tokens / (WINDOW_MS / 60_000);
+  const rate = tokens / (WINDOW_MS / 60_000); // tokens per minute
   const idx = 1 - Math.exp(-(rate / SOFT_CAP_TOKENS_PER_MIN));
   return clamp(idx);
 }
@@ -57,9 +67,11 @@ function extractTextAndUsage(j: any): { text: string; usage: Usage } {
     j?.message ??
     j?.content ??
     j?.output_text ??
-    j?.data?.text ?? "";
+    j?.data?.text ??
+    "";
   const usage: Usage =
-    j?.usage ?? j?.meta?.usage ?? {
+    j?.usage ??
+    j?.meta?.usage ?? {
       total_tokens: text ? Math.ceil(text.split(/\s+/).length * 2) : 0,
       prompt_tokens: undefined,
       completion_tokens: text ? Math.ceil(text.split(/\s+/).length * 1.5) : 0,
@@ -74,11 +86,7 @@ async function callLLM(
   try {
     const payload = {
       model: AGENT.backendModel,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history,
-        { role: "user", content: userText },
-      ],
+      messages: [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: userText }],
       stream: false,
     };
     const res = await fetch("/api/chat", {
@@ -94,8 +102,7 @@ async function callLLM(
   }
 }
 
-/* -------------------- feeder content -------------------- */
-
+/** ---------------------- Feeder content ------------------------ */
 const BRAINTROTS = [
   "NPC live loop: ice cream so good remix",
   "day-in-the-life sigma grindset cut",
@@ -123,15 +130,16 @@ function nextBrainrotTopic(rng: () => number, recent: string[]) {
 }
 function topicCategory(topic: string): Category {
   const t = topic.toLowerCase();
-  if (t.includes("tiktok") || t.includes("npc") || t.includes("skibidi") || t.includes("sigma") || t.includes("capcut") || t.includes("subway")) return "tiktok";
+  if (t.includes("tiktok") || t.includes("npc") || t.includes("skibidi") || t.includes("sigma") || t.includes("capcut") || t.includes("subway"))
+    return "tiktok";
   if (t.includes("story") || t.includes("stories") || t.includes("carousel")) return "stories";
   return "instagram";
 }
+
 const msFmt = (n: number) => `${Math.round(n)}ms`;
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-/* -------------------- mood & impact -------------------- */
-
+/** --------------------- Mood & Impact logic -------------------- */
 function computeMood(level: number, volatility: number) {
   const arousal = clamp(volatility * 2);
   const drift = clamp(level);
@@ -153,76 +161,69 @@ function computeImpact(series: BrainrotPoint[], usage: UsageSample[]) {
   }
   const meanDelta = N > 1 ? sumAbs / (N - 1) : 0;
   const driftVelocity = clamp(meanDelta * 5);
+
   const cutoff = Date.now() - 5 * 60_000;
   const recent = usage.filter((s) => s.ts >= cutoff);
   const tokens = recent.reduce((a, b) => a + b.in + b.out, 0);
   const attentionBudgetUsed = clamp(tokens / (SOFT_CAP_TOKENS_PER_MIN * 5));
+
   const spark = series.slice(-60).map((p) => ({ t: p.t, y: p.gargle }));
   return { driftVelocity, attentionBudgetUsed, spark };
 }
 
-/* -------------------- language & attention analytics -------------------- */
-
-/** tiny tokenizer + stopword filter */
+/** ----------------- Language/Attention analytics --------------- */
 const STOP = new Set([
   "the","a","an","of","to","in","on","and","or","for","with","is","are","was","were","be","been","by","at","as","it","that","this","from","over","under","into","out","we","you","i"
 ]);
-function tokens(s: string) {
+function tokensOf(s: string) {
   return (s.toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => !STOP.has(w));
 }
-function keywordSet(s: string) { return new Set(tokens(s)); }
-
-/** domain terms we expect in a technical / experiment context */
+function keywordSet(s: string) {
+  return new Set(tokensOf(s));
+}
 const TERMINOLOGY = [
   "latency","coherence","volatility","tokens","index","window","rolling","smooth","prompt","completion",
-  "attention","budget","slope","trend","distribution","baseline","cap","normalize","drift","arousal","fatigue"
+  "attention","budget","slope","trend","distribution","baseline","cap","normalize","drift","arousal","fatigue",
 ];
-/** meme/slang lexicon Gargle is expected to pick up */
 const MEME_TERMS = [
-  "npc","sigma","rizz","ohio","skibidi","capcut","fan","edit","slowmo","subway","surfers","gyatt","alpha","beta","ratio","cringe","based","mid","glaze"
+  "npc","sigma","rizz","ohio","skibidi","capcut","fan","edit","slowmo","subway","surfers","gyatt","alpha","beta","ratio","cringe","based","mid","glaze",
 ];
-
-/** Build recent feed→reply pairs from logs */
 function buildPairs(logs: LogLine[]) {
   const pairs: Array<{ feed: string; reply: string }> = [];
   let pending: string | null = null;
   for (const l of logs) {
-    if (l.who === "feed") {
-      pending = l.text.replace(/^Feed →\s*/, "");
-    } else if (l.who === "gargle" && pending) {
+    if (l.who === "feed") pending = l.text.replace(/^Feed →\s*/, "");
+    else if (l.who === "gargle" && pending) {
       pairs.push({ feed: pending, reply: l.text });
       pending = null;
     }
   }
-  return pairs.slice(-20); // last 20 interactions
+  return pairs.slice(-20);
 }
-
-/** Attention Span (0..1): on-topic overlap + concision */
 function attentionSpanScore(pairs: Array<{ feed: string; reply: string }>) {
   if (!pairs.length) return { score: 0, avgOnTopic: 0, avgLen: 0 };
   let overlapSum = 0;
   let lenSum = 0;
   for (const { feed, reply } of pairs) {
     const fk = keywordSet(feed);
-    const rk = tokens(reply);
+    const rk = tokensOf(reply);
     const overlap = rk.filter((w) => fk.has(w)).length;
     overlapSum += fk.size ? overlap / Math.max(1, fk.size) : 0;
     lenSum += rk.length;
   }
-  const avgOnTopic = overlapSum / pairs.length;      // 0..1
-  const avgLen = lenSum / pairs.length;              // words
-  const concision = clamp(1 - Math.max(0, (avgLen - 28)) / 60); // penalize rambling beyond ~28 words
+  const avgOnTopic = overlapSum / pairs.length;
+  const avgLen = lenSum / pairs.length;
+  const concision = clamp(1 - Math.max(0, avgLen - 28) / 60);
   const score = clamp(0.7 * avgOnTopic + 0.3 * concision);
   return { score, avgOnTopic, avgLen };
 }
-
-/** Terminology mastery and meme fluency */
 function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
-  const replies = pairs.map((p) => tokens(p.reply));
+  const replies = pairs.map((p) => tokensOf(p.reply));
   const uniqueTerms = new Set<string>();
   const uniqueMemes = new Set<string>();
   const memeCountsPerReply: number[] = [];
-  const seenMemes = new Set<string>(); // for learning velocity
+  const newPerReply: number[] = [];
+  const seen = new Set<string>();
 
   for (const r of replies) {
     let memeCount = 0;
@@ -231,14 +232,15 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
       if (MEME_TERMS.includes(t)) {
         uniqueMemes.add(t);
         memeCount++;
+        if (!seen.has(t)) {
+          seen.add(t);
+        }
       }
     }
     memeCountsPerReply.push(memeCount);
   }
-
-  // learning trend: how many *new* meme tokens appear each reply
-  const newPerReply: number[] = [];
-  const seen = new Set<string>();
+  // new terms per reply
+  seen.clear();
   for (const r of replies) {
     let newly = 0;
     for (const t of r) {
@@ -250,30 +252,34 @@ function termAndMemeMetrics(pairs: Array<{ feed: string; reply: string }>) {
     newPerReply.push(newly);
   }
 
-  const termMastery = clamp(uniqueTerms.size / Math.max(1, TERMINOLOGY.length));
-  const memeFluency = clamp(uniqueMemes.size / Math.max(1, MEME_TERMS.length));
-
-  // simple slope 0..1 from last up to 10 points
-  const trendSlice = newPerReply.slice(-10);
+  // normalize simple slope
+  const slice = newPerReply.slice(-10);
   let slope = 0;
-  if (trendSlice.length >= 2) {
-    const n = trendSlice.length;
+  if (slice.length >= 2) {
+    const n = slice.length;
     const xs = Array.from({ length: n }, (_, i) => i);
     const xbar = (n - 1) / 2;
-    const ybar = avg(trendSlice);
-    let num = 0, den = 0;
-    for (let i = 0; i < n; i++) { num += (xs[i] - xbar) * (trendSlice[i] - ybar); den += (xs[i] - xbar) ** 2; }
+    const ybar = avg(slice);
+    let num = 0,
+      den = 0;
+    for (let i = 0; i < n; i++) {
+      num += (xs[i] - xbar) * (slice[i] - ybar);
+      den += (xs[i] - xbar) ** 2;
+    }
     slope = den ? num / den : 0;
   }
-  const learningTrend = clamp((slope + 1) / 2); // normalize roughly into 0..1
+  const learningTrend = clamp((slope + 1) / 2);
 
-  // build tiny sparklines
-  const memeSpark = memeCountsPerReply.map((y, i) => ({ i, y }));
-  const learnSpark = newPerReply.map((y, i) => ({ i, y }));
-
-  return { termMastery, memeFluency, memeSpark, learnSpark, newPerReply };
+  return {
+    termMastery: clamp(uniqueTerms.size / Math.max(1, TERMINOLOGY.length)),
+    memeFluency: clamp(uniqueMemes.size / Math.max(1, MEME_TERMS.length)),
+    memeSpark: memeCountsPerReply.map((y, i) => ({ i, y })),
+    learnSpark: newPerReply.map((y, i) => ({ i, y })),
+    learningTrend,
+  };
 }
 
+/** =========================== Component ======================== */
 export default function GargleExperiment() {
   const [range, setRange] = useState<RangeKey>("ALL");
   const [chat, setChat] = useState<ChatMessage[]>([]);
@@ -294,10 +300,15 @@ export default function GargleExperiment() {
   const statsRef = useRef<StatSample[]>([]);
   const [statsTick, setStatsTick] = useState(0);
 
-  useEffect(() => { levelRef.current = level.gargle; }, [level.gargle]);
-  useEffect(() => { logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" }); }, [logs]);
+  useEffect(() => {
+    levelRef.current = level.gargle;
+  }, [level.gargle]);
 
-  // Feeder (LOW only)
+  useEffect(() => {
+    logsRef.current?.scrollTo({ top: logsRef.current.scrollHeight, behavior: "smooth" });
+  }, [logs]);
+
+  /** ----------------------- Feeder (LOW only) ------------------ */
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
@@ -308,14 +319,13 @@ export default function GargleExperiment() {
       const approxIn = 14 + Math.floor(rng() * 22);
       usageRef.current.push({ ts: now, in: approxIn, out: 0 });
 
-      // category + timing
       const cat = topicCategory(topic);
       pendingCatRef.current = cat;
       lastFeedAtRef.current = now;
 
       setLogs((prev) => [...prev, { who: "feed" as const, text: `Feed → ${topic}`, ts: now }].slice(-500));
 
-      // Reply after slight delay
+      // Gargle reply
       setTimeout(async () => {
         const historyFromLogs = logs.slice(-8).map((l): { role: "user" | "assistant"; content: string } => {
           const role: "user" | "assistant" = l.who === "feed" ? "user" : "assistant";
@@ -328,7 +338,8 @@ export default function GargleExperiment() {
         const reply = out?.text?.trim() || "(no response)";
 
         const inTok = out?.usage?.prompt_tokens ?? 0;
-        const outTok = out?.usage?.completion_tokens ??
+        const outTok =
+          out?.usage?.completion_tokens ??
           (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
 
         usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
@@ -356,9 +367,10 @@ export default function GargleExperiment() {
     }, FEED_INTERVAL_MS);
 
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rng, logs]);
 
-  // MODEL CHATS
+  /** ----------------------- Model chats ------------------------ */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const el = inputRef.current;
@@ -378,7 +390,8 @@ export default function GargleExperiment() {
     const out = await callLLM(system, text, history);
     const reply = out?.text?.trim() || "(no response)";
     const inTok = out?.usage?.prompt_tokens ?? 0;
-    const outTok = out?.usage?.completion_tokens ??
+    const outTok =
+      out?.usage?.completion_tokens ??
       (out?.usage?.total_tokens ? Math.max(0, (out?.usage?.total_tokens || 0) - inTok) : 0);
 
     usageRef.current.push({ ts: Date.now(), in: inTok, out: outTok });
@@ -393,7 +406,7 @@ export default function GargleExperiment() {
     });
   }
 
-  /* -------------- derived time-series -------------- */
+  /** ----------------------- Derived values --------------------- */
   const cur = level.gargle;
   const avgLvl = series.length ? series.reduce((s, p) => s + p.gargle, 0) / series.length : 0;
   const vol = useMemo(() => {
@@ -410,11 +423,10 @@ export default function GargleExperiment() {
   const mood = computeMood(cur, vol);
   const impact = useMemo(() => computeImpact(series, usageRef.current), [series]);
 
-  // NEW: language/attention analytics
   const lang = useMemo(() => {
     const pairs = buildPairs(logs);
     const att = attentionSpanScore(pairs);
-    const { termMastery, memeFluency, memeSpark, learnSpark } = termAndMemeMetrics(pairs);
+    const { termMastery, memeFluency, memeSpark, learnSpark, learningTrend } = termAndMemeMetrics(pairs);
     return {
       attention: att.score,
       onTopic: att.avgOnTopic,
@@ -423,6 +435,7 @@ export default function GargleExperiment() {
       memeFluency,
       memeSpark,
       learnSpark,
+      learningTrend,
     };
   }, [logs]);
 
@@ -442,74 +455,81 @@ export default function GargleExperiment() {
     return { counts, avgLatency, avgReplyLen };
   }, [statsTick]);
 
+  /** ------------------------------ UI -------------------------- */
   return (
     <div className="relative min-h-screen text-neutral-900 arena-root">
-      <motion.div aria-hidden className="bg-sheen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} />
+      {/* NOTE: bg-sheen overlay removed per request */}
 
-      {/* Header */}
+      {/* Header (non-sticky, simplified) */}
       <header className="arena-top">
         <div className="max-w-7xl mx-auto px-4">
+          {/* Row 1: Brand / LIVE / Powered by */}
           <div className="flex items-center justify-between py-2">
-            <div className="flex items-baseline gap-3">
-              <div className="arena-logo">Gargle Lab</div>
-              <nav className="arena-nav hidden md:flex">
-                <a className="is-active">LIVE</a>
-              </nav>
-            </div>
-            <div className="arena-actions hidden md:flex">
+            <div className="arena-logo">Gargle Lab</div>
+            <div className="flex items-center gap-3">
+              <span className="live-pill">LIVE</span>
               <span className="arena-chip">Powered by {AGENT.poweredBy}</span>
             </div>
           </div>
         </div>
 
+        {/* Row 2: Ticker only */}
         <div className="arena-ticker">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-6 gap-2">
-            <div className="tix"><span className="tix-key">INDEX</span><span className="tix-val">{cur.toFixed(3)}</span></div>
-            <div className="tix"><span className="tix-key">AVG</span><span className="tix-val">{avgLvl.toFixed(3)}</span></div>
-            <div className="tix"><span className="tix-key">VOL</span><span className="tix-val">{vol.toFixed(3)}</span></div>
-            <div className="tix"><span className="tix-key">FEED</span><span className="tix-val">LOW</span></div>
-            <div className="tix"><span className="tix-key">SOURCE</span><span className="tix-val">TikTok / Stories / IG</span></div>
-            <div className="tix"><span className="tix-key">AGENT</span><span className="tix-val">{AGENT.name}</span></div>
-          </div>
-        </div>
-
-        {/* Vitals strip */}
-        <div className="arena-vitals">
-          <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="vital">
-              <div className="vital-key">DRIFT</div>
-              <div className="vital-bar"><span style={{ width: `${Math.round(mood.drift * 100)}%` }} /></div>
-              <div className="vital-val">{mood.drift.toFixed(2)}</div>
+            <div className="tix">
+              <span className="tix-key">INDEX</span>
+              <span className="tix-val">{cur.toFixed(3)}</span>
             </div>
-            <div className="vital">
-              <div className="vital-key">AROUSAL</div>
-              <div className="vital-bar"><span style={{ width: `${Math.round(mood.arousal * 100)}%` }} /></div>
-              <div className="vital-val">{mood.arousal.toFixed(2)}</div>
+            <div className="tix">
+              <span className="tix-key">AVG</span>
+              <span className="tix-val">{avgLvl.toFixed(3)}</span>
             </div>
-            <div className="vital">
-              <div className="vital-key">COHERENCE</div>
-              <div className="vital-bar"><span style={{ width: `${Math.round(mood.coherence * 100)}%` }} /></div>
-              <div className="vital-val">{mood.coherence.toFixed(2)}</div>
+            <div className="tix">
+              <span className="tix-key">VOL</span>
+              <span className="tix-val">{vol.toFixed(3)}</span>
             </div>
-            <div className="vital">
-              <div className="vital-key">FATIGUE</div>
-              <div className="vital-bar"><span style={{ width: `${Math.round(mood.fatigue * 100)}%` }} /></div>
-              <div className="vital-val">{mood.fatigue.toFixed(2)}</div>
+            <div className="tix">
+              <span className="tix-key">FEED</span>
+              <span className="tix-val">LOW</span>
+            </div>
+            <div className="tix">
+              <span className="tix-key">SOURCE</span>
+              <span className="tix-val">TikTok / Stories / IG</span>
+            </div>
+            <div className="tix">
+              <span className="tix-key">AGENT</span>
+              <span className="tix-val">{AGENT.name}</span>
             </div>
           </div>
         </div>
       </header>
 
+      {/* Main */}
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-12 gap-6">
-        {/* Left: Chart + Impact + Cognitive Effects + Model Chats */}
+        {/* Left column */}
         <section className="col-span-12 lg:col-span-8 space-y-6">
-          {/* Chart */}
+          {/* Brainrot chart */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />TOTAL BRAINROT</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                TOTAL BRAINROT
+              </div>
               <div className="arena-tabs">
-                <button className={`arena-tab ${range === "ALL" ? "is-active" : ""}`} onClick={() => setRange("ALL")}>ALL</button>
-                <button className={`arena-tab ${range === "2M" ? "is-active" : ""}`} onClick={() => setRange("2M")}>2M</button>
+                <button
+                  className={`arena-tab ${range === "ALL" ? "is-active" : ""}`}
+                  onClick={() => setRange("ALL")}
+                  type="button"
+                >
+                  ALL
+                </button>
+                <button
+                  className={`arena-tab ${range === "2M" ? "is-active" : ""}`}
+                  onClick={() => setRange("2M")}
+                  type="button"
+                >
+                  2M
+                </button>
               </div>
             </div>
             <div className="relative h-[420px]">
@@ -534,10 +554,13 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
-          {/* Impact (existing orange spark) */}
+          {/* Impact panel */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />IMPACT ON GARGLE</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                IMPACT ON GARGLE
+              </div>
               <div className="arena-muted">last 5 minutes</div>
             </div>
             <div className="grid grid-cols-12 gap-4 p-4">
@@ -545,12 +568,16 @@ export default function GargleExperiment() {
                 <div className="impact-grid">
                   <div className="impact-stat">
                     <div className="impact-key">DRIFT VELOCITY</div>
-                    <div className="impact-bar"><span style={{ width: `${Math.round(impact.driftVelocity * 100)}%` }} /></div>
+                    <div className="impact-bar">
+                      <span style={{ width: `${Math.round(impact.driftVelocity * 100)}%` }} />
+                    </div>
                     <div className="impact-val">{(impact.driftVelocity * 100).toFixed(0)}%</div>
                   </div>
                   <div className="impact-stat">
                     <div className="impact-key">ATTENTION BUDGET USED</div>
-                    <div className="impact-bar"><span style={{ width: `${Math.round(impact.attentionBudgetUsed * 100)}%` }} /></div>
+                    <div className="impact-bar">
+                      <span style={{ width: `${Math.round(impact.attentionBudgetUsed * 100)}%` }} />
+                    </div>
                     <div className="impact-val">{(impact.attentionBudgetUsed * 100).toFixed(0)}%</div>
                   </div>
                 </div>
@@ -575,10 +602,13 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
-          {/* NEW: Cognitive Effects (attention + terminology + memes + learning) */}
+          {/* Cognitive effects */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />COGNITIVE EFFECTS</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                COGNITIVE EFFECTS
+              </div>
               <div className="arena-muted">derived from feed→reply pairs</div>
             </div>
             <div className="grid grid-cols-12 gap-4 p-4">
@@ -586,26 +616,32 @@ export default function GargleExperiment() {
                 <div className="impact-grid">
                   <div className="impact-stat">
                     <div className="impact-key">ATTENTION SPAN</div>
-                    <div className="impact-bar"><span style={{ width: `${Math.round(lang.attention * 100)}%` }} /></div>
+                    <div className="impact-bar">
+                      <span style={{ width: `${Math.round(lang.attention * 100)}%` }} />
+                    </div>
                     <div className="impact-val">{(lang.attention * 100).toFixed(0)}%</div>
-                    <div className="impact-note">on-topic ~ {(lang.onTopic * 100).toFixed(0)}%, avg reply {Math.round(lang.avgLen)}w</div>
+                    <div className="impact-note">
+                      on-topic ~ {(lang.onTopic * 100).toFixed(0)}%, avg reply {Math.round(lang.avgLen)}w
+                    </div>
                   </div>
                   <div className="impact-stat">
                     <div className="impact-key">TERMINOLOGY MASTERY</div>
-                    <div className="impact-bar"><span style={{ width: `${Math.round(lang.termMastery * 100)}%` }} /></div>
+                    <div className="impact-bar">
+                      <span style={{ width: `${Math.round(lang.termMastery * 100)}%` }} />
+                    </div>
                     <div className="impact-val">{(lang.termMastery * 100).toFixed(0)}%</div>
                     <div className="impact-note">coverage of experiment terms</div>
                   </div>
                   <div className="impact-stat">
                     <div className="impact-key">MEME FLUENCY</div>
-                    <div className="impact-bar"><span style={{ width: `${Math.round(lang.memeFluency * 100)}%` }} /></div>
+                    <div className="impact-bar">
+                      <span style={{ width: `${Math.round(lang.memeFluency * 100)}%` }} />
+                    </div>
                     <div className="impact-val">{(lang.memeFluency * 100).toFixed(0)}%</div>
                     <div className="impact-note">recognizes & uses meme lexicon</div>
                   </div>
                 </div>
               </div>
-
-              {/* Two orange sparklines: memes per reply, new-terms learning */}
               <div className="col-span-12 lg:col-span-5">
                 <div className="grid grid-cols-1 gap-4">
                   <div className="spark-card">
@@ -616,7 +652,9 @@ export default function GargleExperiment() {
                           <CartesianGrid stroke="#f3f4f6" vertical={false} />
                           <XAxis dataKey="i" stroke="#171717" tick={{ fontSize: 10 }} />
                           <YAxis allowDecimals={false} stroke="#171717" tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }} />
+                          <Tooltip
+                            contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }}
+                          />
                           <Line type="monotone" dataKey="y" dot={false} strokeWidth={3} stroke="var(--accent)" isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
@@ -630,21 +668,27 @@ export default function GargleExperiment() {
                           <CartesianGrid stroke="#f3f4f6" vertical={false} />
                           <XAxis dataKey="i" stroke="#171717" tick={{ fontSize: 10 }} />
                           <YAxis allowDecimals={false} stroke="#171717" tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }} />
+                          <Tooltip
+                            contentStyle={{ background: "#fff", border: "1px solid #111", borderRadius: 0, padding: 8 }}
+                          />
                           <Line type="monotone" dataKey="y" dot={false} strokeWidth={3} stroke="var(--accent)" isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
+                    <div className="impact-note mt-1">learning trend ~ {(lang.learningTrend * 100).toFixed(0)}%</div>
                   </div>
                 </div>
               </div>
             </div>
           </motion.div>
 
-          {/* MODEL CHATS */}
+          {/* Model chats */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />MODEL CHATS</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                MODEL CHATS
+              </div>
               <div className="arena-muted">talk to Gargle — press Enter</div>
             </div>
             <div className="h-[360px] overflow-y-auto px-5 py-4 space-y-3">
@@ -657,25 +701,27 @@ export default function GargleExperiment() {
                     exit={{ opacity: 0, y: -6 }}
                     className={`max-w-[85%] ${m.from === "user" ? "ml-auto" : "mr-auto"}`}
                   >
-                    <div className={`arena-bubble ${m.from === "user" ? "user" : "ai"}`}>
-                      {m.text}
-                    </div>
+                    <div className={`arena-bubble ${m.from === "user" ? "user" : "ai"}`}>{m.text}</div>
                   </motion.div>
                 ))}
               </AnimatePresence>
             </div>
             <form onSubmit={onSubmit} className="arena-form">
               <input ref={inputRef} type="text" placeholder={`MESSAGE ${AGENT.name}`} className="arena-input" />
-              <button type="submit" className="arena-button">SEND</button>
+              <button type="submit" className="arena-button btn-accent btn-thock">SEND</button>
             </form>
           </motion.div>
         </section>
 
-        {/* Right: Persona + README + LOGS */}
+        {/* Right column */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
+          {/* Persona */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />GARGLE PERSONA</div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                GARGLE PERSONA
+              </div>
               <span className="mood-chip">{computeMood(cur, vol).name.toUpperCase()}</span>
             </div>
             <div className="arena-readme">
@@ -691,21 +737,39 @@ export default function GargleExperiment() {
             </div>
           </motion.div>
 
+          {/* README */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />README.TXT</div>
-              <div className="arena-tabs"><span className="arena-tab is-active">OVERVIEW</span></div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                README.TXT
+              </div>
+              <div className="arena-tabs">
+                <span className="arena-tab is-active">OVERVIEW</span>
+              </div>
             </div>
             <div className="arena-readme">
-              <p><b>Gargle</b> is an experiment. We feed a single model a steady drip of social “brainrot” (TikTok clips, story chains, and Instagram doomscroll). We track a <b>Brainrot Index</b> from tokens-per-minute over a rolling window, and infer state from level and short-term volatility.</p>
-              <p>“MODEL CHATS” is for you to talk to Gargle directly. The <b>LOGS</b> panel shows how Gargle reacts to the feed.</p>
+              <p>
+                <b>Gargle</b> is an experiment. We feed a single model a steady drip of social “brainrot”
+                (TikTok clips, story chains, and Instagram doomscroll). We track a <b>Brainrot Index</b> from
+                tokens-per-minute over a rolling 60s window, and infer state from level and short-term volatility.
+              </p>
+              <p>
+                “MODEL CHATS” is for you to talk to Gargle directly. The <b>LOGS</b> panel shows how Gargle reacts to the feed.
+              </p>
             </div>
           </motion.div>
 
+          {/* Logs */}
           <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div className="arena-card-head">
-              <div className="arena-card-title"><span className="accent-dot" />LOGS</div>
-              <div className="arena-tabs"><span className="arena-tab is-active">ALL</span></div>
+              <div className="arena-card-title">
+                <span className="accent-dot" />
+                LOGS
+              </div>
+              <div className="arena-tabs">
+                <span className="arena-tab is-active">ALL</span>
+              </div>
             </div>
             <div ref={logsRef} className="arena-logs">
               <ul className="space-y-2 text-sm">
@@ -726,13 +790,24 @@ export default function GargleExperiment() {
       <section className="max-w-7xl mx-auto px-4 grid grid-cols-12 gap-6 pb-6">
         <motion.div className="arena-card col-span-12 lg:col-span-8" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
-            <div className="arena-card-title"><span className="accent-dot" />HOW IT WORKS</div>
+            <div className="arena-card-title">
+              <span className="accent-dot" />
+              HOW IT WORKS
+            </div>
           </div>
           <div className="arena-readme">
             <ol className="list-decimal pl-6 space-y-2">
-              <li>The feeder selects <b>fresh brainrot topics</b> (no recent repeats), e.g., “tan tang sahur”, NPC loops, mashups, and doomscroll comment piles.</li>
-              <li>Each item is sent to the backend and <b>Gargle replies via the OpenAI Chat API</b>. Replies are short and reveal drift or resilience.</li>
-              <li>We record prompt/completion token counts and compute a <b>Brainrot Index</b> over a rolling 60s window.</li>
+              <li>
+                The feeder selects <b>fresh brainrot topics</b> (no recent repeats), e.g., “tan tang sahur”, NPC loops,
+                mashups, and doomscroll comment piles.
+              </li>
+              <li>
+                Each item is sent to the backend and <b>Gargle replies via the OpenAI Chat API</b>. Replies are short and
+                reveal drift or resilience.
+              </li>
+              <li>
+                We record prompt/completion token counts and compute a <b>Brainrot Index</b> over a rolling 60s window.
+              </li>
               <li>The chart smooths that index with an exponential blend; volatility informs inferred state.</li>
             </ol>
           </div>
@@ -740,10 +815,16 @@ export default function GargleExperiment() {
 
         <motion.div className="arena-card col-span-12 lg:col-span-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
-            <div className="arena-card-title"><span className="accent-dot" />COMING SOON</div>
+            <div className="arena-card-title">
+              <span className="accent-dot" />
+              COMING SOON
+            </div>
           </div>
           <div className="arena-readme">
-            <p>We’ll evaluate how <b>Gargle trades memecoins</b> after he is fully “brainrotted”. The plan: simulate headline-driven micro-markets and measure decision lag, overfit loops, and recovery.</p>
+            <p>
+              We’ll evaluate how <b>Gargle trades memecoins</b> after he is fully “brainrotted”. The plan: simulate
+              headline-driven micro-markets and measure decision lag, overfit loops, and recovery.
+            </p>
           </div>
         </motion.div>
       </section>
@@ -752,7 +833,10 @@ export default function GargleExperiment() {
       <section className="max-w-7xl mx-auto px-4 pb-10">
         <motion.div className="arena-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="arena-card-head">
-            <div className="arena-card-title"><span className="accent-dot" />INTAKE → RESPONSE FLOW (last 5 min)</div>
+            <div className="arena-card-title">
+              <span className="accent-dot" />
+              INTAKE → RESPONSE FLOW (last 5 min)
+            </div>
           </div>
 
           <div className="grid grid-cols-12 gap-6">
@@ -761,18 +845,28 @@ export default function GargleExperiment() {
                 <svg viewBox="0 0 900 260" width="100%" height="100%" role="img" aria-label="Intake to response flow diagram">
                   <g>
                     <circle cx="80" cy="60" r="18" fill="#111" />
-                    <text x="110" y="65" fontSize="12" fill="#111">TikTok</text>
+                    <text x="110" y="65" fontSize="12" fill="#111">
+                      TikTok
+                    </text>
                     <circle cx="80" cy="120" r="18" fill="#111" />
-                    <text x="110" y="125" fontSize="12" fill="#111">Stories</text>
+                    <text x="110" y="125" fontSize="12" fill="#111">
+                      Stories
+                    </text>
                     <circle cx="80" cy="180" r="18" fill="#111" />
-                    <text x="110" y="185" fontSize="12" fill="#111">Instagram</text>
+                    <text x="110" y="185" fontSize="12" fill="#111">
+                      Instagram
+                    </text>
                   </g>
 
                   <rect x="300" y="40" width="120" height="160" fill="#fff" stroke="#111" />
-                  <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">FEEDER</text>
+                  <text x="360" y="125" fontSize="12" textAnchor="middle" fill="#111">
+                    FEEDER
+                  </text>
 
                   <rect x="540" y="40" width="140" height="160" fill="#fff" stroke="#111" />
-                  <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">GARGLE</text>
+                  <text x="610" y="125" fontSize="12" textAnchor="middle" fill="#111">
+                    GARGLE
+                  </text>
 
                   {(() => {
                     const w = (n: number) => Math.max(2, Math.min(14, 2 + n * 2));
@@ -789,10 +883,18 @@ export default function GargleExperiment() {
                     );
                   })()}
 
-                  <text x="700" y="95" fontSize="11" fill="#111">Avg Latency</text>
-                  <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgLatency}</text>
-                  <text x="700" y="145" fontSize="11" fill="#111">Avg Reply Length</text>
-                  <text x="700" y="165" fontSize="13" fill="#111" fontWeight="bold">{diagram.avgReplyLen} words</text>
+                  <text x="700" y="95" fontSize="11" fill="#111">
+                    Avg Latency
+                  </text>
+                  <text x="700" y="115" fontSize="13" fill="#111" fontWeight="bold">
+                    {diagram.avgLatency}
+                  </text>
+                  <text x="700" y="145" fontSize="11" fill="#111">
+                    Avg Reply Length
+                  </text>
+                  <text x="700" y="165" fontSize="13" fill="#111" fontWeight="bold">
+                    {diagram.avgReplyLen} words
+                  </text>
                 </svg>
               </div>
             </div>
@@ -823,9 +925,7 @@ export default function GargleExperiment() {
                     <div className="tix-val">{diagram.avgReplyLen}w</div>
                   </div>
                 </div>
-                <p className="mt-3 text-xs">
-                  Counts and averages are computed over the last 5 minutes of feed→reply cycles.
-                </p>
+                <p className="mt-3 text-xs">Counts and averages are computed over the last 5 minutes of feed→reply cycles.</p>
               </div>
             </div>
           </div>
