@@ -1,28 +1,46 @@
 {
-  "name": "gargle-brainrot",
-  "version": "1.0.0",
-  "private": true,
+  "name": "eliza-town",
+  "version": "0.1.0",
+  "description": "A visual multi-agent orchestration system powered by Eliza OS",
+  "type": "module",
+  "main": "server.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:setup": "psql -U postgres -f src/db/schema.sql",
+    "db:reset": "psql -U postgres -c 'DROP DATABASE IF EXISTS eliza_town' && psql -U postgres -c 'CREATE DATABASE eliza_town' && npm run db:setup",
+    "lint": "eslint src/",
+    "test": "node --test"
+  },
+  "keywords": [
+    "eliza-os",
+    "multi-agent",
+    "ai-agents",
+    "orchestration",
+    "three-js",
+    "visualization",
+    "autonomous-agents",
+    "claude",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/eliza-town"
   },
   "dependencies": {
-    "framer-motion": "^11.0.0",
-    "next": "14.2.5",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "recharts": "^2.10.3"
+    "@anthropic-ai/sdk": "^0.30.0",
+    "archiver": "^7.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "pg": "^8.12.0",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
-    "autoprefixer": "^10.4.19",
-    "eslint": "8.57.0",
-    "eslint-config-next": "14.2.5",
-    "postcss": "^8.4.38",
-    "tailwindcss": "^3.4.9",
-    "typescript": "5.4.5",
-    "@types/react": "^18.3.5",
-    "@types/node": "^20.12.12"
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
