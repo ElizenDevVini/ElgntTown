@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eliza Town</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    #canvas-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #ui-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .panel {
+      pointer-events: auto;
+      background: rgba(20, 20, 20, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+    }
+
+    /* Task Input Panel */
+    #task-panel {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 600px;
+      padding: 16px;
+    }
+
+    #task-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #fff;
+      font-size: 16px;
+      outline: none;
+    }
+
+    #task-input:focus {
+      border-color: rgba(0, 255, 255, 0.5);
+    }
+
+    #task-input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Status Panel */
+    #status-panel {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      padding: 16px;
+      min-width: 200px;
+    }
+
+    #status-panel h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 12px;
+    }
+
+    .agent-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .agent-status:last-child {
+      border-bottom: none;
+    }
+
+    .agent-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .agent-name {
+      font-size: 14px;
+      flex: 1;
+    }
+
+    .agent-state {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Speech Bubbles */
+    .speech-bubble {
+      position: absolute;
+      background: rgba(30, 30, 30, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 8px 12px;
+      font-size: 13px;
+      max-width: 200px;
+      transform: translateX(-50%);
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    .speech-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid rgba(30, 30, 30, 0.95);
+    }
+
+    .thought-bubble {
+      background: rgba(50, 50, 50, 0.9);
+      border-style: dashed;
+      font-style: italic;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* Agent Labels */
+    .agent-label {
+      position: absolute;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.6);
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    /* Task Progress */
+    #task-progress {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      padding: 16px;
+      display: none;
+    }
+
+    #task-progress.active {
+      display: block;
+    }
+
+    #task-progress h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 12px;
+    }
+
+    .progress-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .progress-step.active {
+      color: #fff;
+    }
+
+    .progress-step.complete {
+      color: #00ff00;
+    }
+
+    .step-icon {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+
+    .step-icon.complete::after {
+      content: '✓';
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="ui-overlay">
+    <!-- Status Panel -->
+    <div id="status-panel" class="panel">
+      <h3>Agents</h3>
+      <div id="agent-list"></div>
+    </div>
+
+    <!-- Task Progress -->
+    <div id="task-progress" class="panel">
+      <h3>Current Task</h3>
+      <div id="progress-steps"></div>
+    </div>
+
+    <!-- Task Input -->
+    <div id="task-panel" class="panel">
+      <input 
+        type="text" 
+        id="task-input" 
+        placeholder="Describe what you want to build..."
+        autocomplete="off"
+      />
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+
+    // ========================================
+    // SCENE SETUP
+    // ========================================
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x0a0a0a)
+    scene.fog = new THREE.Fog(0x0a0a0a, 15, 50)
+
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    )
+    camera.position.set(12, 10, 12)
+    camera.lookAt(0, 0, 0)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.shadowMap.enabled = true
+    document.getElementById('canvas-container').appendChild(renderer.domElement)
+
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.05
+    controls.maxPolarAngle = Math.PI / 2.2
+    controls.minDistance = 5
+    controls.maxDistance = 30
+
+    // ========================================
+    // LIGHTING
+    // ========================================
+
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.5)
+    scene.add(ambientLight)
+
+    const mainLight = new THREE.DirectionalLight(0xffffff, 1)
+    mainLight.position.set(10, 20, 10)
+    mainLight.castShadow = true
+    mainLight.shadow.mapSize.width = 2048
+    mainLight.shadow.mapSize.height = 2048
+    scene.add(mainLight)
+
+    // ========================================
+    // GROUND
+    // ========================================
+
+    const groundGeometry = new THREE.PlaneGeometry(50, 50)
+    const groundMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      roughness: 0.9
+    })
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial)
+    ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
+    scene.add(ground)
+
+    // Grid helper
+    const grid = new THREE.GridHelper(50, 50, 0x222222, 0x222222)
+    grid.position.y = 0.01
+    scene.add(grid)
+
+    // ========================================
+    // HUBS (Placeholder boxes)
+    // ========================================
+
+    const hubs = {
+      town_square: { position: { x: 0, y: 0 }, color: 0x444444 },
+      planning_room: { position: { x: -5, y: 3 }, color: 0x00ffff },
+      design_studio: { position: { x: 5, y: 3 }, color: 0xff00ff },
+      coding_desk: { position: { x: -5, y: -3 }, color: 0xffaa00 },
+      review_station: { position: { x: 5, y: -3 }, color: 0x00ff00 }
+    }
+
+    Object.entries(hubs).forEach(([id, hub]) => {
+      const geometry = new THREE.BoxGeometry(2, 0.5, 2)
+      const material = new THREE.MeshStandardMaterial({
+        color: hub.color,
+        emissive: hub.color,
+        emissiveIntensity: 0.2
+      })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(hub.position.x, 0.25, hub.position.y)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      mesh.userData = { type: 'hub', id }
+      scene.add(mesh)
+      hub.mesh = mesh
+    })
+
+    // ========================================
+    // AGENTS (Placeholder spheres)
+    // ========================================
+
+    const agents = {
+      planner: { color: 0x00ffff, position: { x: 0, y: 0 } },
+      designer: { color: 0xff00ff, position: { x: 1, y: 0 } },
+      coder: { color: 0xffaa00, position: { x: -1, y: 0 } },
+      reviewer: { color: 0x00ff00, position: { x: 0, y: 1 } }
+    }
+
+    Object.entries(agents).forEach(([type, agent]) => {
+      // Body
+      const bodyGeometry = new THREE.CapsuleGeometry(0.3, 0.5, 8, 16)
+      const bodyMaterial = new THREE.MeshStandardMaterial({
+        color: agent.color,
+        emissive: agent.color,
+        emissiveIntensity: 0.3
+      })
+      const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
+      body.position.set(agent.position.x, 0.7, agent.position.y)
+      body.castShadow = true
+      body.userData = { type: 'agent', agentType: type }
+      scene.add(body)
+
+      // Head
+      const headGeometry = new THREE.SphereGeometry(0.25, 16, 16)
+      const head = new THREE.Mesh(headGeometry, bodyMaterial)
+      head.position.set(agent.position.x, 1.4, agent.position.y)
+      head.castShadow = true
+      scene.add(head)
+
+      agent.body = body
+      agent.head = head
+      agent.targetPosition = null
+      agent.status = 'idle'
+    })
+
+    // ========================================
+    // AGENT MOVEMENT
+    // ========================================
+
+    function moveAgentTo(type, targetX, targetZ) {
+      const agent = agents[type]
+      if (!agent) return
+
+      agent.targetPosition = { x: targetX, z: targetZ }
+      agent.status = 'traveling'
+    }
+
+    function updateAgents(delta) {
+      const speed = 3
+      
+      Object.entries(agents).forEach(([type, agent]) => {
+        if (agent.targetPosition && agent.status === 'traveling') {
+          const dx = agent.targetPosition.x - agent.body.position.x
+          const dz = agent.targetPosition.z - agent.body.position.z
+          const dist = Math.sqrt(dx * dx + dz * dz)
+
+          if (dist < 0.1) {
+            // Arrived
+            agent.body.position.x = agent.targetPosition.x
+            agent.body.position.z = agent.targetPosition.z
+            agent.head.position.x = agent.targetPosition.x
+            agent.head.position.z = agent.targetPosition.z
+            agent.targetPosition = null
+            agent.status = 'idle'
+          } else {
+            // Move toward target
+            const moveX = (dx / dist) * speed * delta
+            const moveZ = (dz / dist) * speed * delta
+
+            agent.body.position.x += moveX
+            agent.body.position.z += moveZ
+            agent.head.position.x += moveX
+            agent.head.position.z += moveZ
+          }
+
+          // Bobbing animation while walking
+          agent.body.position.y = 0.7 + Math.sin(Date.now() * 0.01) * 0.05
+          agent.head.position.y = 1.4 + Math.sin(Date.now() * 0.01) * 0.05
+        } else {
+          // Idle breathing animation
+          agent.body.position.y = 0.7 + Math.sin(Date.now() * 0.002) * 0.02
+          agent.head.position.y = 1.4 + Math.sin(Date.now() * 0.002) * 0.02
+        }
+      })
+    }
+
+    // ========================================
+    // UI
+    // ========================================
+
+    function updateAgentList() {
+      const list = document.getElementById('agent-list')
+      list.innerHTML = Object.entries(agents).map(([type, agent]) => `
+        <div class="agent-status">
+          <div class="agent-dot" style="background: #${agent.color.toString(16).padStart(6, '0')}"></div>
+          <span class="agent-name">${type}</span>
+          <span class="agent-state">${agent.status}</span>
+        </div>
+      `).join('')
+    }
+
+    updateAgentList()
+
+    // Speech bubble management
+    const bubbles = []
+
+    function showSpeechBubble(agentType, text, isThought = false) {
+      const agent = agents[agentType]
+      if (!agent) return
+
+      // Get screen position
+      const pos = agent.head.position.clone()
+      pos.y += 0.5
+      pos.project(camera)
+
+      const x = (pos.x * 0.5 + 0.5) * window.innerWidth
+      const y = (-pos.y * 0.5 + 0.5) * window.innerHeight
+
+      const bubble = document.createElement('div')
+      bubble.className = `speech-bubble ${isThought ? 'thought-bubble' : ''}`
+      bubble.style.left = `${x}px`
+      bubble.style.top = `${y - 60}px`
+      bubble.textContent = text
+
+      document.getElementById('ui-overlay').appendChild(bubble)
+      bubbles.push({ element: bubble, createdAt: Date.now(), duration: isThought ? 2000 : 4000 })
+    }
+
+    function updateBubbles() {
+      const now = Date.now()
+      bubbles.forEach((bubble, i) => {
+        if (now - bubble.createdAt > bubble.duration) {
+          bubble.element.remove()
+          bubbles.splice(i, 1)
+        }
+      })
+    }
+
+    // ========================================
+    // WEBSOCKET
+    // ========================================
+
+    let ws = null
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      ws = new WebSocket(`${protocol}//${window.location.host}`)
+
+      ws.onopen = () => {
+        console.log('[WS] Connected')
+      }
+
+      ws.onmessage = (event) => {
+        const { event: eventType, data } = JSON.parse(event.data)
+
+        switch (eventType) {
+          case 'agent_move':
+            moveAgentTo(data.agent, data.to.x, data.to.y)
+            break
+
+          case 'agent_status':
+            if (agents[data.agent]) {
+              agents[data.agent].status = data.status
+              updateAgentList()
+            }
+            break
+
+          case 'agent_speak':
+            showSpeechBubble(data.agent, data.text, false)
+            break
+
+          case 'agent_think':
+            showSpeechBubble(data.agent, data.text, true)
+            break
+
+          case 'task_complete':
+            console.log('Task complete!', data)
+            break
+        }
+      }
+
+      ws.onclose = () => {
+        console.log('[WS] Disconnected, reconnecting...')
+        setTimeout(connectWebSocket, 2000)
+      }
+    }
+
+    connectWebSocket()
+
+    // ========================================
+    // TASK INPUT
+    // ========================================
+
+    const taskInput = document.getElementById('task-input')
+
+    taskInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && taskInput.value.trim()) {
+        const prompt = taskInput.value.trim()
+        taskInput.value = ''
+
+        try {
+          const response = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+          })
+
+          const task = await response.json()
+          console.log('Task created:', task)
+
+        } catch (error) {
+          console.error('Failed to create task:', error)
+        }
+      }
+    })
+
+    // ========================================
+    // ANIMATION LOOP
+    // ========================================
+
+    const clock = new THREE.Clock()
+
+    function animate() {
+      requestAnimationFrame(animate)
+
+      const delta = clock.getDelta()
+
+      updateAgents(delta)
+      updateBubbles()
+      controls.update()
+
+      renderer.render(scene, camera)
+    }
+
+    animate()
+
+    // ========================================
+    // RESIZE
+    // ========================================
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(window.innerWidth, window.innerHeight)
+    })
+
+    // ========================================
+    // DEBUG: Test agent movement
+    // ========================================
+
+    // Uncomment to test agent movement:
+    // setTimeout(() => moveAgentTo('planner', -5, 3), 1000)  // Move to planning room
+    // setTimeout(() => showSpeechBubble('planner', 'Let me break this down...'), 2000)
+    // setTimeout(() => moveAgentTo('coder', -5, -3), 3000)   // Move to coding desk
+    // setTimeout(() => showSpeechBubble('coder', 'Time to write some code!'), 4000)
+
+  </script>
+</body>
+</html>
